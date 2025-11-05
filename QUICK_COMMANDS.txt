@@ -1,0 +1,50 @@
+🚁 DRONE WEB CONTROLLER - QUICK COMMANDS 🚁
+==============================================
+
+📱 START DRONE WEB CONTROLLER:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Super quick (from any directory):
+  drone
+
+Quick script:
+  ./drone_start.sh
+
+Full command:
+  cd /home/angelo/Projects/Drone-Fieldtest
+  sudo ./build/apps/drone_web_controller/drone_web_controller
+
+⚙️  AUTOSTART CONTROL:
+━━━━━━━━━━━━━━━━━━━━━━━━
+Check status:
+  ./scripts/autostart_control.sh
+
+Disable autostart:
+  mv ~/Desktop/Autostart ~/Desktop/Autostart_DISABLED
+
+Enable autostart:
+  mv ~/Desktop/Autostart_DISABLED ~/Desktop/Autostart
+
+🔧 BUILD & DEVELOPMENT:
+━━━━━━━━━━━━━━━━━━━━━━━━━
+Build project:
+  ./scripts/build.sh
+
+Check WiFi manually:
+  ./scripts/wifi_disconnect.sh
+
+🌐 CONNECTION INFO:
+━━━━━━━━━━━━━━━━━━━━━
+WiFi: DroneController
+Password: drone123
+Web UI: http://192.168.4.1:8080
+
+📊 MONITORING:
+━━━━━━━━━━━━━━━━
+Service logs:
+  sudo journalctl -u drone-recorder -f
+
+System status:
+  systemctl --user status drone-recorder
+
+Storage check:
+  ls -lh /media/angelo/DRONE_DATA/
