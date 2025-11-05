@@ -1,0 +1,172 @@
+#include "lcd_handler.h"
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+
+LCDHandler::LCDHandler() 
+    : lcd_(nullptr), update_interval_ms_(1000), current_line1_(""), current_line2_("") {
+}
+
+LCDHandler::~LCDHandler() {
+    cleanup();
+}
+
+bool LCDHandler::init() {
+    try {
+        lcd_ = new LCD_I2C();
+        if (lcd_->init()) {
+            clear();
+            showStartupMessage();
+            return true;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "LCD initialization failed: " << e.what() << std::endl;
+    }
+    return false;
+}
+
+void LCDHandler::cleanup() {
+    if (lcd_) {
+        clear();
+        delete lcd_;
+        lcd_ = nullptr;
+    }
+}
+
+std::string LCDHandler::truncateToWidth(const std::string& text, int max_width) {
+    if (text.length() <= max_width) {
+        return text;
+    }
+    return text.substr(0, max_width);
+}
+
+std::string LCDHandler::centerText(const std::string& text, int width) {
+    if (text.length() >= width) {
+        return truncateToWidth(text, width);
+    }
+    
+    int padding = (width - text.length()) / 2;
+    return std::string(padding, ' ') + text + std::string(width - padding - text.length(), ' ');
+}
+
+std::string LCDHandler::formatTime(int seconds) {
+    int minutes = seconds / 60;
+    int secs = seconds % 60;
+    
+    std::stringstream ss;
+    ss << std::setfill('0') << std::setw(2) << minutes << ":" 
+       << std::setfill('0') << std::setw(2) << secs;
+    return ss.str();
+}
+
+void LCDHandler::displayMessage(const std::string& line1, const std::string& line2) {
+    if (!lcd_) return;
+    
+    std::string l1 = truncateToWidth(line1, 16);
+    std::string l2 = truncateToWidth(line2, 16);
+    
+    // Nur updaten wenn sich was geändert hat
+    if (l1 != current_line1_ || l2 != current_line2_) {
+        current_line1_ = l1;
+        current_line2_ = l2;
+        
+        // LCD_I2C verwendet printMessage mit \n als Trenner
+        std::string full_message = l1 + "\n" + l2;
+        lcd_->clear();
+        lcd_->printMessage(full_message);
+        
+        last_update_time_ = std::chrono::steady_clock::now();
+    }
+}
+
+void LCDHandler::clear() {
+    if (lcd_) {
+        lcd_->clear();
+        current_line1_.clear();
+        current_line2_.clear();
+    }
+}
+
+void LCDHandler::showStartupMessage() {
+    displayMessage(
+        centerText("DRONE CAM", 16),
+        centerText("System Ready!", 16)
+    );
+}
+
+void LCDHandler::showFunnyMessage() {
+    // Zufällige lustige Sprüche
+    std::vector<std::pair<std::string, std::string>> funny_messages = {
+        {"Ready 2 Fly!", "Let's go hunt!"},
+        {"Drone Activated", "Sky is calling!"},
+        {"Camera Armed", "Target acquired"},
+        {"Flight Mode ON", "Buckle up!"},
+        {"ZED Vision", "Double trouble!"},
+        {"Jetson Power", "AI engaged!"}
+    };
+    
+    static int message_index = 0;
+    auto& msg = funny_messages[message_index % funny_messages.size()];
+    message_index++;
+    
+    displayMessage(
+        centerText(msg.first, 16),
+        centerText(msg.second, 16)
+    );
+}
+
+void LCDHandler::showInitializing(const std::string& component) {
+    displayMessage(
+        "Initializing...",
+        truncateToWidth(component, 16)
+    );
+}
+
+void LCDHandler::showUSBWaiting() {
+    displayMessage(
+        "Waiting for USB",
+        "Insert storage.."
+    );
+}
+
+void LCDHandler::showRecording(const std::string& profile, int total_seconds, int remaining_seconds) {
+    // Verkürze Profil-Namen für Display
+    std::string short_profile = profile;
+    if (profile == "realtime_30fps") short_profile = "RT-30FPS";
+    else if (profile == "realtime_light") short_profile = "RT-LIGHT";
+    else if (profile == "long_mission") short_profile = "LONGMISS";
+    else if (profile == "training") short_profile = "TRAINING";
+    else if (profile == "ultra_quality") short_profile = "ULTRA-Q";
+    else if (profile == "development") short_profile = "DEVELOP";
+    else if (profile == "realtime_heavy") short_profile = "RT-HEAVY";
+    else if (profile == "quick_test") short_profile = "QUICKTEST";
+    
+    short_profile = truncateToWidth(short_profile, 16);
+    
+    std::string time_display = formatTime(remaining_seconds) + "/" + formatTime(total_seconds);
+    
+    displayMessage(
+        short_profile,
+        centerText(time_display, 16)
+    );
+}
+
+void LCDHandler::showRecordingComplete() {
+    displayMessage(
+        centerText("Recording", 16),
+        centerText("Complete!", 16)
+    );
+}
+
+void LCDHandler::showError(const std::string& error) {
+    displayMessage(
+        "ERROR:",
+        truncateToWidth(error, 16)
+    );
+}
+
+bool LCDHandler::shouldUpdate() {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update_time_).count();
+    return elapsed >= update_interval_ms_;
+}

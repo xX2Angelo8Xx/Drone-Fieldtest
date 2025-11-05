@@ -1,0 +1,17 @@
+/home/angelo/Projects/Drone-Fieldtest/
+├── CMakeLists.txt (C++17, alle Dependencies)
+├── apps/data_collector/
+│   ├── main.cpp (Hauptanwendung)
+│   ├── autostart.sh (Autostart-Skript)
+│   └── CMakeLists.txt
+├── common/
+│   ├── hardware/
+│   │   ├── lcd_display/ (LCD I2C Steuerung)
+│   │   └── zed_camera/ (ZED 2i Kamera Integration)
+│   ├── storage/ (USB-Stick Management)
+│   └── utils/
+├── systemd/
+│   └── drone-recorder.service (Autostart Service)
+└── scripts/
+    ├── build.sh (Build-Skript)
+    └── install_service.sh (Service Installation)

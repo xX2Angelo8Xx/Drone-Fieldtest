@@ -1,0 +1,24 @@
+[Unit]
+Description=Drone Web Controller Service
+After=multi-user.target
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+User=angelo
+Group=angelo
+Environment=DISPLAY=:0
+Environment=HOME=/home/angelo
+Environment=USER=angelo
+WorkingDirectory=/home/angelo/Projects/Drone-Fieldtest
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/angelo/Projects/Drone-Fieldtest/apps/drone_web_controller/autostart.sh
+Restart=no
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=600
+TimeoutStopSec=30
+
+[Install]
+WantedBy=graphical.target

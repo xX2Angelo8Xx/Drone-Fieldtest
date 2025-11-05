@@ -1,0 +1,31 @@
+# 🚀 QUICK REFERENCE - DRONE FIELDTEST
+# ====================================
+
+## ZED TOOLS (immer verfügbar):
+/usr/local/zed/tools/ZED_Explorer          # Video Viewer ⭐
+/usr/local/zed/tools/ZED_Diagnostic        # Kamera Test
+/usr/local/zed/tools/ZED_Depth_Viewer      # Live Depth
+/usr/local/zed/tools/ZED_Sensor_Viewer     # IMU/Sensoren
+
+## AUFNAHME PROFILE SCHNELL WECHSELN:
+cd /home/angelo/Projects/Drone-Fieldtest/build/apps/smart_recorder
+
+sudo ./smart_recorder realtime_light       # HD720@30fps (30s) ⭐ AI-OPTIMAL
+sudo ./smart_recorder training             # HD1080@30fps (60s) ⭐ TRAINING  
+sudo ./smart_recorder realtime_heavy       # VGA@100fps (30s)
+sudo ./smart_recorder development          # HD720@60fps (20s)
+
+## AUTOSTART PROFIL ÄNDERN:
+nano /home/angelo/Projects/Drone-Fieldtest/apps/data_collector/autostart.sh
+# Ändere Zeile: "$EXECUTABLE_PATH" realtime_light
+./scripts/build.sh && sudo systemctl restart drone-recorder
+
+## AUFNAHMEN FINDEN:
+ls -lt /media/angelo/DRONE_DATA/flight_* | head -5    # Neueste
+ZED_Explorer /media/angelo/DRONE_DATA/flight_*/video.svo2
+
+## SERVICE KONTROLLE:
+sudo systemctl start/stop/restart drone-recorder
+sudo journalctl -u drone-recorder -f                 # Live-Logs
+
+====================================

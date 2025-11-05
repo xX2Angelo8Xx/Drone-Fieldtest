@@ -1,0 +1,289 @@
+# 🚁 DRONE FIELDTEST - TERMINAL BEFEHLE CHEATSHEET
+# =========================================================
+
+## 📋 WICHTIGSTE BEFEHLE AUF EINEN BLICK
+
+### 🔧 SYSTEM BAUEN UND STARTEN
+```bash
+# Projekt kompilieren
+cd /home/angelo/Projects/Drone-Fieldtest
+./scripts/build.sh
+
+# Autostart-Service installieren
+sudo ./scripts/install_service.sh
+
+# Service manuell starten/stoppen
+sudo systemctl start drone-recorder
+sudo systemctl stop drone-recorder
+sudo systemctl status drone-recorder
+
+# Service-Logs anschauen
+sudo journalctl -u drone-recorder -f
+```
+
+## 🎥 AUFNAHME-PROFILE VERWENDEN
+
+### Verfügbare Profile anzeigen:
+```bash
+cd /home/angelo/Projects/Drone-Fieldtest/build/apps/smart_recorder
+./smart_recorder --help
+```
+
+### Smart Recorder mit verschiedenen Profilen:
+```bash
+# Standard (HD720@30fps, 30s) - EMPFOHLEN für AI
+sudo ./smart_recorder realtime_light
+
+# Training-Qualität (HD1080@30fps, 60s)
+sudo ./smart_recorder training
+
+# Maximale Performance (VGA@100fps, 30s)
+sudo ./smart_recorder realtime_heavy
+
+# Entwicklung/Test (HD720@60fps, 20s)
+sudo ./smart_recorder development
+
+# Ultra-Qualität (HD2K@15fps, 30s)
+sudo ./smart_recorder ultra_quality
+```
+
+## ⚙️ AUTOSTART-PROFIL ÄNDERN
+
+### Aktuelles Autostart-Profil prüfen:
+```bash
+cat /home/angelo/Projects/Drone-Fieldtest/apps/data_collector/autostart.sh
+```
+
+### Autostart-Profil ändern:
+```bash
+# Datei bearbeiten
+nano /home/angelo/Projects/Drone-Fieldtest/apps/data_collector/autostart.sh
+
+# Ändere diese Zeile:
+"$EXECUTABLE_PATH" realtime_light
+
+# Auf ein anderes Profil:
+"$EXECUTABLE_PATH" training          # Für 60s HD1080 
+"$EXECUTABLE_PATH" realtime_heavy    # Für VGA@100fps
+"$EXECUTABLE_PATH" development       # Für HD720@60fps
+```
+
+### Nach Änderung neu bauen und Service neustarten:
+```bash
+./scripts/build.sh
+sudo systemctl restart drone-recorder
+```
+
+## ⏱️ AUFNAHMEZEIT ANPASSEN
+
+### Smart Recorder Profile anpassen:
+```bash
+# Smart Recorder Datei bearbeiten
+nano /home/angelo/Projects/Drone-Fieldtest/apps/smart_recorder/main.cpp
+
+# Suche nach diesen Zeilen und ändere die Sekunden:
+{"training", {
+    RecordingMode::HD1080_30FPS, 
+    60,  # <-- HIER ÄNDERN (Sekunden)
+    "High Quality Training Data",
+    "Für AI-Model Training - beste Qualität"
+}},
+
+# Nach Änderung neu kompilieren:
+./scripts/build.sh
+```
+
+### Alte Data Collector Aufnahmezeit ändern:
+```bash
+# Data Collector Datei bearbeiten  
+nano /home/angelo/Projects/Drone-Fieldtest/apps/data_collector/main.cpp
+
+# Suche nach dieser Zeile und ändere:
+const int recording_duration_seconds = 60; # <-- HIER ÄNDERN
+```
+
+## 🎬 ZED APPLIKATIONEN FINDEN UND VERWENDEN
+
+### ZED Tools Verzeichnis:
+```bash
+# Alle ZED Tools anzeigen
+ls -la /usr/local/zed/tools/
+
+# ZED Tools im PATH verfügbar machen
+export PATH="/usr/local/zed/tools:$PATH"
+```
+
+### ZED Explorer (Video Viewer):
+```bash
+# Direkt starten (leer)
+/usr/local/zed/tools/ZED_Explorer
+
+# SVO2-Datei direkt öffnen
+ZED_Explorer /media/angelo/DRONE_DATA/flight_20251018_185120/video.svo2
+
+# Neueste Aufnahme automatisch öffnen
+LATEST=$(ls -t /media/angelo/DRONE_DATA/flight_*/video.svo* | head -1)
+ZED_Explorer "$LATEST"
+
+# Neueste Aufnahme mit Depth Viewer automatisch öffnen
+LATEST=$(ls -t /media/angelo/DRONE_DATA/flight_*/video.svo* | head -1)
+ZED_Depth_Viewer "$LATEST"
+
+# Mit Wildcards (öffnet erste gefundene)
+ZED_Explorer /media/angelo/DRONE_DATA/flight_*/video.svo2
+```
+
+### Andere wichtige ZED Tools:
+```bash
+# Kamera-Diagnose
+/usr/local/zed/tools/ZED_Diagnostic
+
+# Depth Viewer (Live)
+/usr/local/zed/tools/ZED_Depth_Viewer
+
+# Sensor Viewer (IMU, etc.)
+/usr/local/zed/tools/ZED_Sensor_Viewer
+
+# SVO Editor
+/usr/local/zed/tools/ZED_SVO_Editor
+
+# Kamera Kalibrierung
+/usr/local/zed/tools/ZED_Calibration
+```
+
+## 📁 AUFNAHME-DATEIEN FINDEN
+
+### USB-Daten anschauen:
+```bash
+# USB-Stick Inhalt
+ls -la /media/angelo/DRONE_DATA/
+
+# Neueste Aufnahme finden
+ls -lt /media/angelo/DRONE_DATA/flight_* | head -5
+
+# Dateigröße prüfen
+du -sh /media/angelo/DRONE_DATA/flight_*/video.svo2
+
+# Sensordaten anschauen
+head -10 /media/angelo/DRONE_DATA/flight_*/sensors.csv
+```
+
+### Aufnahmen kopieren/archivieren:
+```bash
+# Alle Aufnahmen auf lokale Festplatte kopieren
+cp -r /media/angelo/DRONE_DATA/flight_* ~/drone_recordings/
+
+# Einzelne Aufnahme kopieren
+cp -r /media/angelo/DRONE_DATA/flight_20251018_* ~/my_flight_data/
+```
+
+## 🔍 SYSTEM ÜBERWACHEN
+
+### USB-Status prüfen:
+```bash
+# Gemountete USB-Geräte
+mount | grep media
+
+# USB-Speicher prüfen
+df -h /media/angelo/DRONE_DATA
+```
+
+### System-Performance:
+```bash
+# CPU/Memory Usage
+htop
+
+# GPU Status (falls verfügbar)
+nvidia-smi
+
+# Festplatte Speicherplatz
+df -h
+```
+
+### ZED Kamera Status:
+```bash
+# Kamera testen
+/usr/local/zed/tools/ZED_Diagnostic
+
+# USB-Verbindung prüfen
+lsusb | grep -i stereo
+```
+
+## ⚡ SCHNELL-BEFEHLE
+
+### Schnell eine Testaufnahme machen:
+```bash
+cd /home/angelo/Projects/Drone-Fieldtest/build/apps/smart_recorder
+sudo ./smart_recorder development  # 20s HD720@60fps
+```
+
+### Performance Test aller Modi:
+```bash
+cd /home/angelo/Projects/Drone-Fieldtest/build/apps/performance_test
+sudo ./performance_test
+```
+
+### Service-Status schnell prüfen:
+```bash
+sudo systemctl is-active drone-recorder
+sudo systemctl is-enabled drone-recorder
+```
+
+## 🆘 TROUBLESHOOTING
+
+### Wenn ZED Kamera nicht erkannt wird:
+```bash
+# USB neu erkennen
+sudo udevadm trigger
+
+# ZED Diagnose
+/usr/local/zed/tools/ZED_Diagnostic
+
+# Kamera Permissions prüfen
+ls -la /dev/video*
+```
+
+### Wenn USB nicht gemountet wird:
+```bash
+# Verfügbare USB-Geräte
+lsblk
+
+# USB manuell mounten
+sudo mount /dev/sdb1 /media/angelo/DRONE_DATA
+```
+
+### Service-Logs bei Problemen:
+```bash
+# Letzte Logs anschauen
+sudo journalctl -u drone-recorder -n 50
+
+# Live-Logs verfolgen
+sudo journalctl -u drone-recorder -f
+```
+
+## 📝 KONFIGURATIONSDATEIEN
+
+### Wichtige Dateien zum Bearbeiten:
+```bash
+# Autostart-Skript
+nano /home/angelo/Projects/Drone-Fieldtest/apps/data_collector/autostart.sh
+
+# Service-Konfiguration
+sudo nano /etc/systemd/system/drone-recorder.service
+
+# Smart Recorder Profile
+nano /home/angelo/Projects/Drone-Fieldtest/apps/smart_recorder/main.cpp
+```
+
+# 🎯 EMPFOHLENER WORKFLOW FÜR AI-TRAINING:
+
+1. **Autostart auf `training` setzen** für lange, hochqualitative Aufnahmen
+2. **Service aktivieren**: `sudo systemctl enable drone-recorder`
+3. **Mehrere Flüge durchführen** um Trainingsdaten zu sammeln
+4. **ZED_Explorer verwenden** um Aufnahmen zu überprüfen
+5. **SVO2-Dateien in AI-Pipeline konvertieren**
+
+=========================================================
+Erstellt: $(date)
+Projekt: Drone Fieldtest System
+Autor: AI Assistant
