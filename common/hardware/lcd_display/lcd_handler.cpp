@@ -13,7 +13,8 @@ LCDHandler::~LCDHandler() {
 
 bool LCDHandler::init() {
     try {
-        lcd_ = new LCD_I2C();
+        // Use /dev/i2c-7 for Jetson Orin Nano (as per Copilot instructions)
+        lcd_ = new LCD_I2C("/dev/i2c-7", 0x27, true);
         if (lcd_->init()) {
             clear();
             showStartupMessage();

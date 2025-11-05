@@ -385,18 +385,30 @@ void DroneWebController::systemMonitorLoop() {
             }
         }
         
-        // Update LCD display
+        // Update LCD display with detailed status
         if (recording_active_) {
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recording_start_time_).count();
+            int remaining = recording_duration_seconds_ - elapsed;
             
-            std::ostringstream line1;
-            line1 << "REC " << elapsed << "s";
-            updateLCD(line1.str(), "Recording...");
+            std::ostringstream line1, line2;
+            line1 << "REC " << elapsed << "/" << recording_duration_seconds_ << "s";
+            
+            if (remaining > 0) {
+                line2 << "Remaining: " << remaining << "s";
+            } else {
+                line2 << "Auto-stopping...";
+            }
+            
+            updateLCD(line1.str(), line2.str());
+        } else if (current_state_ == RecorderState::STOPPING) {
+            updateLCD("STOPPING", "Recording...");
         } else if (hotspot_active_ && web_server_running_) {
-            updateLCD("Web Controller", "192.168.4.1");
+            updateLCD("Web Controller", "192.168.4.1:8080");
+        } else if (hotspot_active_) {
+            updateLCD("WiFi Hotspot", "Starting...");
         } else {
-            updateLCD("Drone Control", "Ready");
+            updateLCD("Drone Control", "Initializing...");
         }
         
         std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -549,7 +561,9 @@ std::string DroneWebController::generateMainPage() {
            ".status{padding:15px;margin:15px 0;border-radius:8px;font-weight:bold;font-size:18px}"
            ".status.idle{background:#d4edda;color:#155724;border:2px solid #c3e6cb}"
            ".status.recording{background:#fff3cd;color:#856404;border:2px solid #ffeaa7}"
+           ".status.stopping{background:#ffeaa7;color:#b5651d;border:2px solid #ffdf7e;animation:pulse 1s infinite}"
            ".status.error{background:#f8d7da;color:#721c24;border:2px solid #f5c6cb}"
+           "@keyframes pulse{0%{opacity:1}50%{opacity:0.7}100%{opacity:1}}"
            ".progress{margin:15px 0;padding:10px;background:#f8f9fa;border-radius:8px}"
            ".progress-bar{width:100%;height:25px;background:#e9ecef;border-radius:12px;overflow:hidden;margin:8px 0}"
            ".progress-fill{height:100%;background:#28a745;transition:width 0.3s ease;border-radius:12px}"
@@ -593,7 +607,11 @@ std::string DroneWebController::generateMainPage() {
            "});"
            "}"
            "function startRecording(){fetch('/api/start_recording',{method:'POST'}).then(()=>updateStatus());}"
-           "function stopRecording(){fetch('/api/stop_recording',{method:'POST'}).then(()=>updateStatus());}"
+           "function stopRecording(){"
+           "document.getElementById('status').textContent='STOPPING...';"
+           "document.getElementById('statusDiv').className='status stopping';"
+           "fetch('/api/stop_recording',{method:'POST'}).then(()=>updateStatus());"
+           "}"
            "function shutdown(){if(confirm('System herunterfahren?')){fetch('/api/shutdown',{method:'POST'});}}"
            "setInterval(updateStatus,1000);updateStatus();"
            "</script></head><body>"
