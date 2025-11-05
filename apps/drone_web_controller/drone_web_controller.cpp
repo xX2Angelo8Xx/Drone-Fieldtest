@@ -137,7 +137,7 @@ bool DroneWebController::stopRecording() {
 }
 
 bool DroneWebController::shutdownSystem() {
-    std::cout << "[WEB_CONTROLLER] System shutdown requested" << std::endl;
+    std::cout << std::endl << "[WEB_CONTROLLER] System shutdown requested" << std::endl;
     updateLCD("System", "Shutting Down");
     
     handleShutdown();
@@ -294,7 +294,7 @@ void DroneWebController::recordingMonitorLoop() {
         
         // Check if recording duration reached
         if (elapsed >= recording_duration_seconds_) {
-            std::cout << "[WEB_CONTROLLER] Recording duration reached, stopping..." << std::endl;
+            std::cout << std::endl << "[WEB_CONTROLLER] Recording duration reached, stopping..." << std::endl;
             
             // Signal recording to stop without calling stopRecording() (avoids deadlock)
             recording_active_ = false;
@@ -642,26 +642,33 @@ void DroneWebController::signalHandler(int signal) {
 }
 
 void DroneWebController::handleShutdown() {
-    std::cout << "[WEB_CONTROLLER] Initiating shutdown sequence..." << std::endl;
+    std::cout << std::endl << "[WEB_CONTROLLER] Initiating shutdown sequence..." << std::endl;
     
     shutdown_requested_ = true;
     
-    // Stop recording if active
+    // Stop recording if active (avoid calling stopRecording from web thread)
     if (recording_active_) {
-        stopRecording();
+        recording_active_ = false;
+        current_state_ = RecorderState::STOPPING;
+        if (recorder_) {
+            recorder_->stopRecording();
+        }
+        current_state_ = RecorderState::IDLE;
     }
     
-    // Stop web server
-    stopWebServer();
+    // Signal web server to stop (but don't wait from within web thread)
+    web_server_running_ = false;
     
     // Stop hotspot
     if (hotspot_active_) {
-        stopHotspot();
+        teardownWiFiHotspot();
+        hotspot_active_ = false;
     }
     
-    // Wait for system monitor thread
+    // Wait for system monitor thread (safe - not called from monitor thread)
     if (system_monitor_thread_ && system_monitor_thread_->joinable()) {
         system_monitor_thread_->join();
+        system_monitor_thread_.reset();
     }
     
     updateLCD("Shutdown", "Complete");
