@@ -1,0 +1,60 @@
+# Build directories
+build/
+CMakeCache.txt
+cmake_install.cmake
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+*~
+
+# Compiled binaries
+*.o
+*.so
+*.a
+*.exe
+
+# Log files
+*.log
+
+# Temporary files
+/tmp/
+*.tmp
+
+# USB mount points
+/media/*/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# ZED files
+*.svo
+*.svo2
+
+# Extracted images (keep structure, ignore content)
+extracted_images/*/*
+!extracted_images/.gitkeep
+!extracted_images/*/
+
+# Test data
+test_images/*.jpg
+!test_images/.gitkeep
+
+# Backup files
+*.backup
+*.bak
+
+# Debug files
+debug_*
+*.debug
+
+# Core dumps
+core.*
+
+# Package files
+*.deb
+*.rpm
+*.tar.gz
+*.zip
