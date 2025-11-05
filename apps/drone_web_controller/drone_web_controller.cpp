@@ -120,13 +120,15 @@ bool DroneWebController::stopRecording() {
         recorder_->stopRecording();
     }
     
-    // Wait for recording monitor thread to finish
-    if (recording_monitor_thread_ && recording_monitor_thread_->joinable()) {
-        recording_monitor_thread_->join();
-    }
-    
+    // Signal recording thread to stop first
     recording_active_ = false;
     current_state_ = RecorderState::IDLE;
+    
+    // Wait for recording monitor thread to finish (after setting flags)
+    if (recording_monitor_thread_ && recording_monitor_thread_->joinable()) {
+        recording_monitor_thread_->join();
+        recording_monitor_thread_.reset();  // Clean up thread pointer
+    }
     
     updateLCD("Recording", "Stopped");
     std::cout << "[WEB_CONTROLLER] Recording stopped" << std::endl;
@@ -256,8 +258,8 @@ bool DroneWebController::monitorWiFiStatus() {
         return false;
     }
     
-    // Check if hostapd and dnsmasq are running
-    result = system("pgrep hostapd > /dev/null && pgrep dnsmasq > /dev/null");
+    // Only check if hostapd is running (dnsmasq may conflict with systemd-resolved)
+    result = system("pgrep hostapd > /dev/null");
     return result == 0;
 }
 
@@ -359,11 +361,21 @@ void DroneWebController::webServerLoop(int port) {
 
 void DroneWebController::systemMonitorLoop() {
     std::cout << "[WEB_CONTROLLER] System monitor thread started" << std::endl;
+    int wifi_failure_count = 0;
     
     while (!shutdown_requested_) {
-        // Monitor WiFi connection if hotspot is active
+        // Monitor WiFi connection if hotspot is active (but be less aggressive)
         if (hotspot_active_) {
-            restartWiFiIfNeeded();
+            if (!monitorWiFiStatus()) {
+                wifi_failure_count++;
+                if (wifi_failure_count >= 3) {  // Only restart after 3 consecutive failures
+                    std::cout << "[WEB_CONTROLLER] WiFi has been down for 15 seconds, attempting restart..." << std::endl;
+                    restartWiFiIfNeeded();
+                    wifi_failure_count = 0;  // Reset counter after restart attempt
+                }
+            } else {
+                wifi_failure_count = 0;  // Reset on success
+            }
         }
         
         // Update LCD display
@@ -389,16 +401,23 @@ void DroneWebController::systemMonitorLoop() {
 bool DroneWebController::setupWiFiHotspot() {
     int result = 0;
     
-    // Configure interface step by step
-    result |= system("sudo iw dev wlP1p1s0 set type managed");
+    std::cout << "[WEB_CONTROLLER] Disconnecting from current WiFi..." << std::endl;
+    // CRITICAL: Disconnect from home network first!
+    system("sudo nmcli device disconnect wlP1p1s0 2>/dev/null");
+    system("sudo systemctl stop NetworkManager");
+    
+    std::cout << "[WEB_CONTROLLER] Cleaning up WiFi interface..." << std::endl;
+    // Clean up interface completely
+    system("sudo pkill hostapd 2>/dev/null");
+    system("sudo pkill dnsmasq 2>/dev/null");
+    system("sudo ip link set dev wlP1p1s0 down");
+    system("sudo ip addr flush dev wlP1p1s0");
+    system("sudo iw dev wlP1p1s0 set type managed");
+    
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    
+    std::cout << "[WEB_CONTROLLER] Setting up Access Point..." << std::endl;
     result |= system("sudo ip link set dev wlP1p1s0 up");
-    
-    if (result != 0) {
-        return false;
-    }
-    
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    
     result |= system("sudo iw dev wlP1p1s0 set type __ap");
     result |= system("sudo ip addr add 192.168.4.1/24 dev wlP1p1s0");
     
@@ -416,21 +435,30 @@ bool DroneWebController::setupWiFiHotspot() {
                  << "driver=nl80211\n"
                  << "ssid=DroneController\n"
                  << "hw_mode=g\n"
-                 << "channel=7\n"
+                 << "channel=6\n"
+                 << "macaddr_acl=0\n"
+                 << "auth_algs=1\n"
+                 << "ignore_broadcast_ssid=0\n"
                  << "wpa=2\n"
                  << "wpa_passphrase=drone123\n"
                  << "wpa_key_mgmt=WPA-PSK\n"
+                 << "wpa_pairwise=TKIP\n"
                  << "rsn_pairwise=CCMP\n";
     hostapd_conf.close();
     
-    // Create dnsmasq configuration
+    // Create dnsmasq configuration with different DNS port to avoid conflict
     std::ofstream dnsmasq_conf("/tmp/dnsmasq.conf");
     if (!dnsmasq_conf.is_open()) {
         return false;
     }
     
     dnsmasq_conf << "interface=wlP1p1s0\n"
-                 << "dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h\n";
+                 << "bind-interfaces\n"
+                 << "dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h\n"
+                 << "port=0\n"  // Disable DNS server to avoid port 53 conflict
+                 << "dhcp-option=3,192.168.4.1\n"  // Gateway
+                 << "dhcp-option=6,192.168.4.1\n"  // DNS server
+                 << "log-dhcp\n";
     dnsmasq_conf.close();
     
     // Kill existing processes and start new ones
@@ -438,20 +466,34 @@ bool DroneWebController::setupWiFiHotspot() {
     system("sudo pkill dnsmasq");
     std::this_thread::sleep_for(std::chrono::seconds(1));
     
+    std::cout << "[WEB_CONTROLLER] Starting hostapd..." << std::endl;
     system("sudo hostapd /tmp/hostapd.conf &");
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(8));  // More time for stability
     
+    std::cout << "[WEB_CONTROLLER] Starting dnsmasq..." << std::endl;
     system("sudo dnsmasq -C /tmp/dnsmasq.conf &");
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    
+    std::cout << "[WEB_CONTROLLER] WiFi Hotspot Status:" << std::endl;
+    system("iwconfig wlP1p1s0 | grep -E '(Mode:|ESSID:|Frequency:)'");
+    system("ip addr show wlP1p1s0 | grep 'inet '");
     
     return true;
 }
 
 bool DroneWebController::teardownWiFiHotspot() {
+    std::cout << "[WEB_CONTROLLER] Tearing down WiFi hotspot..." << std::endl;
     system("sudo pkill hostapd");
     system("sudo pkill dnsmasq");
+    system("sudo ip link set dev wlP1p1s0 down");
     system("sudo iw dev wlP1p1s0 set type managed");
     system("sudo ip addr flush dev wlP1p1s0");
+    system("sudo ip link set dev wlP1p1s0 up");
+    
+    // Restore NetworkManager
+    std::cout << "[WEB_CONTROLLER] Restoring NetworkManager..." << std::endl;
+    system("sudo systemctl start NetworkManager");
+    
     return true;
 }
 
@@ -491,36 +533,80 @@ void DroneWebController::handleClientRequest(int client_socket) {
 }
 
 std::string DroneWebController::generateMainPage() {
-    return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+    return "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
            "<!DOCTYPE html><html><head><title>Drone Controller</title>"
            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-           "<style>body{font-family:Arial;text-align:center;margin:20px;background:#f0f0f0}"
-           ".container{max-width:400px;margin:0 auto;background:white;padding:20px;border-radius:10px}"
-           ".status{padding:15px;margin:10px 0;border-radius:5px;font-weight:bold}"
-           ".status.idle{background:#e8f5e8;color:#2d5a2d}"
-           ".status.recording{background:#fff3cd;color:#856404}"
-           ".status.error{background:#f8d7da;color:#721c24}"
-           "button{padding:15px 30px;margin:10px;border:none;border-radius:5px;font-size:16px;cursor:pointer}"
-           ".start{background:#28a745;color:white}.stop{background:#dc3545;color:white}"
-           ".shutdown{background:#6c757d;color:white}</style>"
-           "<script>function updateStatus(){fetch('/api/status').then(r=>r.json()).then(data=>{"
-           "let stateText = data.state === 0 ? 'IDLE' : data.state === 1 ? 'RECORDING' : 'UNKNOWN';"
+           "<meta charset='utf-8'>"
+           "<style>body{font-family:Arial;text-align:center;margin:15px;background:#f0f0f0}"
+           ".container{max-width:450px;margin:0 auto;background:white;padding:25px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)}"
+           ".status{padding:15px;margin:15px 0;border-radius:8px;font-weight:bold;font-size:18px}"
+           ".status.idle{background:#d4edda;color:#155724;border:2px solid #c3e6cb}"
+           ".status.recording{background:#fff3cd;color:#856404;border:2px solid #ffeaa7}"
+           ".status.error{background:#f8d7da;color:#721c24;border:2px solid #f5c6cb}"
+           ".progress{margin:15px 0;padding:10px;background:#f8f9fa;border-radius:8px}"
+           ".progress-bar{width:100%;height:25px;background:#e9ecef;border-radius:12px;overflow:hidden;margin:8px 0}"
+           ".progress-fill{height:100%;background:#28a745;transition:width 0.3s ease;border-radius:12px}"
+           ".info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:15px 0;font-size:14px}"
+           ".info-item{background:#f8f9fa;padding:8px;border-radius:6px;border:1px solid #dee2e6}"
+           "button{padding:15px 30px;margin:8px;border:none;border-radius:8px;font-size:16px;cursor:pointer;font-weight:bold}"
+           ".start{background:#28a745;color:white;box-shadow:0 2px 4px rgba(40,167,69,0.3)}"
+           ".stop{background:#dc3545;color:white;box-shadow:0 2px 4px rgba(220,53,69,0.3)}"
+           ".shutdown{background:#6c757d;color:white;box-shadow:0 2px 4px rgba(108,117,125,0.3)}"
+           "button:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,0.2)}"
+           "button:disabled{opacity:0.6;cursor:not-allowed;transform:none}"
+           "h1{color:#495057;margin-bottom:25px}</style>"
+           "<script>"
+           "function updateStatus(){"
+           "fetch('/api/status').then(r=>r.json()).then(data=>{"
+           "let stateText = data.state === 0 ? 'IDLE' : data.state === 1 ? 'RECORDING' : 'STOPPING';"
            "document.getElementById('status').textContent=stateText;"
            "let isRecording = data.state === 1;"
            "document.getElementById('statusDiv').className='status '+(isRecording?'recording':'idle');"
            "document.getElementById('startBtn').disabled=isRecording;"
            "document.getElementById('stopBtn').disabled=!isRecording;"
-           "}).catch(()=>{document.getElementById('statusDiv').className='status error';"
-           "document.getElementById('status').textContent='CONNECTION ERROR';});}"
+           "if(isRecording){"
+           "let elapsed = data.recording_duration_total - data.recording_time_remaining;"
+           "let percent = Math.round((elapsed / data.recording_duration_total) * 100);"
+           "let fileSize = (data.bytes_written / (1024*1024*1024)).toFixed(2);"
+           "let speed = data.mb_per_second.toFixed(1);"
+           "document.getElementById('progress').style.display='block';"
+           "document.getElementById('progressBar').style.width=percent+'%';"
+           "document.getElementById('elapsed').textContent=elapsed+'s';"
+           "document.getElementById('remaining').textContent=data.recording_time_remaining+'s';"
+           "document.getElementById('percent').textContent=percent+'%';"
+           "document.getElementById('filesize').textContent=fileSize+' GB';"
+           "document.getElementById('speed').textContent=speed+' MB/s';"
+           "document.getElementById('filename').textContent=data.current_file_path.split('/').pop();"
+           "}else{"
+           "document.getElementById('progress').style.display='none';"
+           "}"
+           "}).catch(()=>{"
+           "document.getElementById('statusDiv').className='status error';"
+           "document.getElementById('status').textContent='CONNECTION ERROR';"
+           "});"
+           "}"
            "function startRecording(){fetch('/api/start_recording',{method:'POST'}).then(()=>updateStatus());}"
            "function stopRecording(){fetch('/api/stop_recording',{method:'POST'}).then(()=>updateStatus());}"
-           "function shutdown(){if(confirm('Shutdown?')){fetch('/api/shutdown',{method:'POST'});}}"
-           "setInterval(updateStatus,2000);updateStatus();</script></head><body>"
-           "<div class='container'><h1>🚁 Drone Controller</h1>"
+           "function shutdown(){if(confirm('System herunterfahren?')){fetch('/api/shutdown',{method:'POST'});}}"
+           "setInterval(updateStatus,1000);updateStatus();"
+           "</script></head><body>"
+           "<div class='container'>"
+           "<h1>DRONE CONTROLLER</h1>"
            "<div id='statusDiv' class='status idle'>Status: <span id='status'>Loading...</span></div>"
-           "<button id='startBtn' class='start' onclick='startRecording()'>▶️ Start Recording</button><br>"
-           "<button id='stopBtn' class='stop' onclick='stopRecording()'>⏹️ Stop Recording</button><br>"
-           "<button class='shutdown' onclick='shutdown()'>🔌 Shutdown</button></div></body></html>";
+           "<div id='progress' style='display:none'>"
+           "<div class='progress-bar'><div id='progressBar' class='progress-fill' style='width:0%'></div></div>"
+           "<div class='info-grid'>"
+           "<div class='info-item'>Elapsed: <strong><span id='elapsed'>0</span></strong></div>"
+           "<div class='info-item'>Remaining: <strong><span id='remaining'>0</span></strong></div>"
+           "<div class='info-item'>Progress: <strong><span id='percent'>0%</span></strong></div>"
+           "<div class='info-item'>File Size: <strong><span id='filesize'>0 GB</span></strong></div>"
+           "<div class='info-item'>Speed: <strong><span id='speed'>0 MB/s</span></strong></div>"
+           "<div class='info-item'>File: <strong><span id='filename'>-</span></strong></div>"
+           "</div></div>"
+           "<button id='startBtn' class='start' onclick='startRecording()'>START RECORDING</button><br>"
+           "<button id='stopBtn' class='stop' onclick='stopRecording()'>STOP RECORDING</button><br>"
+           "<button class='shutdown' onclick='shutdown()'>SHUTDOWN SYSTEM</button>"
+           "</div></body></html>";
 }
 
 std::string DroneWebController::generateStatusAPI() {
