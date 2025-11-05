@@ -318,6 +318,9 @@ int main(int argc, char** argv) {
         std::chrono::steady_clock::now() - shutdown_start).count();
     std::cout << "Recording stopped in " << shutdown_time << " seconds." << std::endl;
     
+    // Explicitly close ZED camera for clean shutdown
+    recorder.close();
+    
     std::cout << "Unmounting USB..." << std::endl;
     storage.unmountUSB();
     std::cout << "USB unmounted." << std::endl;

@@ -29,6 +29,9 @@ public:
     // Stoppe Aufnahme
     void stopRecording();
     
+    // Schließe Kamera explizit (für ordnungsgemäßen Neustart)
+    void close();
+    
     // === PRODUCTION READY FEATURES ===
     
     // Auto-segmentation DISABLED - no longer needed with NTFS/exFAT >4GB support

@@ -656,6 +656,11 @@ void DroneWebController::handleShutdown() {
         current_state_ = RecorderState::IDLE;
     }
     
+    // Explicitly close ZED camera to free it for next restart
+    if (recorder_) {
+        recorder_->close();
+    }
+    
     // Signal web server to stop (but don't wait from within web thread)
     web_server_running_ = false;
     

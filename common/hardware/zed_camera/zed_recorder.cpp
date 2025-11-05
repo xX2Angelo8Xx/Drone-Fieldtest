@@ -447,6 +447,40 @@ void ZEDRecorder::stopRecording() {
     }
 }
 
+void ZEDRecorder::close() {
+    std::cout << "[ZED] Closing camera explicitly..." << std::endl;
+    
+    // Stoppe Aufzeichnung falls noch aktiv
+    if (recording_) {
+        stopRecording();
+    }
+    
+    // Warte auf Thread-Beendigung
+    if (record_thread_ && record_thread_->joinable()) {
+        record_thread_->join();
+    }
+    
+    // Schließe Sensordatei
+    if (sensor_file_.is_open()) {
+        sensor_file_.close();
+    }
+    
+    // Schließe ZED Kamera explizit
+    try {
+        if (zed_.isOpened()) {
+            std::cout << "[ZED] Closing ZED camera..." << std::endl;
+            zed_.close();
+            std::cout << "[ZED] ZED camera closed successfully" << std::endl;
+        } else {
+            std::cout << "[ZED] ZED camera was already closed" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[ZED] Error closing camera: " << e.what() << std::endl;
+    }
+    
+    std::cout << "[ZED] Camera close completed" << std::endl;
+}
+
 bool ZEDRecorder::isRecording() const {
     return recording_;
 }
