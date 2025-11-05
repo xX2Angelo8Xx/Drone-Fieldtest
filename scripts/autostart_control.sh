@@ -33,7 +33,12 @@ fi
 
 echo ""
 echo "Service status:"
-systemctl --user is-enabled drone-recorder 2>/dev/null || echo "Service not installed"
+if systemctl is-enabled drone-recorder >/dev/null 2>&1; then
+    echo "✅ Service installed and enabled"
+    systemctl is-active drone-recorder >/dev/null 2>&1 && echo "🟢 Service running" || echo "🔴 Service stopped"
+else
+    echo "❌ Service not installed"
+fi
 
 echo ""
 echo "Quick commands:"

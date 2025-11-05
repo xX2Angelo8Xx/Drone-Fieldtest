@@ -2,10 +2,10 @@
 
 ## Architecture Overview
 
-This is an **embedded drone field testing system** targeting **Jetson Orin Nano** with ZED 2i stereo camera for autonomous drone AI training data collection. The system uses a modular C++17 architecture with four main applications and shared hardware abstraction layers.
+This is an **embedded drone field testing system** targeting **Jetson Orin Nano** with ZED 2i stereo camera for autonomous drone AI training data collection. The system uses a modular C++17 architecture with WiFi web control interface and shared hardware abstraction layers.
 
 ### Core Applications
-- **`drone_web_controller`**: **PRIMARY** - Web-based drone control via WiFi hotspot with phone interface (NEW DEFAULT)
+- **`drone_web_controller`**: **PRIMARY** - Complete WiFi web interface with autostart control (v1.2-stable)
 - **`smart_recorder`**: Multi-profile recorder with 12+ AI-optimized modes including "standard" (4min HD720@30fps)
 - **`data_collector`**: Legacy autostart recorder (replaced by web controller) 
 - **`performance_test`**: Hardware validation and diagnostics  
@@ -14,6 +14,10 @@ This is an **embedded drone field testing system** targeting **Jetson Orin Nano*
 
 ### Key Components
 - **Web Control Interface**: WiFi hotspot + HTML5 web UI for phone-based drone control (192.168.4.1:8080)
+- **Desktop Autostart Control**: Visual ~/Desktop/Autostart file for autostart enable/disable
+- **Quick Commands**: `drone` and `drone-status` terminal aliases for instant access
+- **Passwordless Sudo**: /etc/sudoers.d/drone-controller for WiFi operations
+- **SystemD Integration**: Auto-boot service with proper user permissions
 - **Network Architecture**: Ethernet for internet, WiFi AP for drone control (dual-interface setup)
 - **Storage**: USB auto-detection with `DRONE_DATA` label, **NTFS/exFAT required** for >4GB files
 - **ZED Camera**: Production-ready SDK integration with **unlimited file size support**
