@@ -70,7 +70,7 @@ bool DroneWebController::startRecording() {
         return false;
     }
     
-    std::cout << "[WEB_CONTROLLER] Starting recording..." << std::endl;
+    std::cout << std::endl << "[WEB_CONTROLLER] Starting recording..." << std::endl;
     updateLCD("Starting", "Recording...");
     
     // Create recording directory
@@ -110,7 +110,7 @@ bool DroneWebController::stopRecording() {
         return false;
     }
     
-    std::cout << "[WEB_CONTROLLER] Stopping recording..." << std::endl;
+    std::cout << std::endl << "[WEB_CONTROLLER] Stopping recording..." << std::endl;
     updateLCD("Stopping", "Recording...");
     
     current_state_ = RecorderState::STOPPING;
@@ -295,16 +295,23 @@ void DroneWebController::recordingMonitorLoop() {
         // Check if recording duration reached
         if (elapsed >= recording_duration_seconds_) {
             std::cout << "[WEB_CONTROLLER] Recording duration reached, stopping..." << std::endl;
+            
+            // Signal recording to stop without calling stopRecording() (avoids deadlock)
+            recording_active_ = false;
+            current_state_ = RecorderState::STOPPING;
+            
+            // Stop ZED recording directly
+            if (recorder_) {
+                recorder_->stopRecording();
+            }
+            
+            current_state_ = RecorderState::IDLE;
+            updateLCD("Recording", "Completed");
             break;
         }
         
         updateRecordingStatus();
         std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-    
-    // Auto-stop recording when duration reached
-    if (recording_active_) {
-        stopRecording();
     }
 }
 
