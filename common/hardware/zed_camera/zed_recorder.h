@@ -32,6 +32,29 @@ public:
     // Schließe Kamera explizit (für ordnungsgemäßen Neustart)
     void close();
     
+    // === PERFORMANCE TESTING ===
+    // Enable depth computation during SVO2 recording (for performance testing)
+    // Computes depth maps but doesn't save them - tests Jetson performance
+    void enableDepthComputation(bool enable, sl::DEPTH_MODE mode = sl::DEPTH_MODE::NEURAL);
+    bool isDepthComputationEnabled() const { return compute_depth_; }
+    float getDepthComputationFPS() const { return depth_fps_; }
+    
+    // Get latest depth map (for visualization)
+    // Returns true if depth data is available, false otherwise
+    bool getLatestDepthMap(sl::Mat& out_depth);
+    
+    // Get current frame number (for synchronized depth map naming)
+    int getCurrentFrameNumber() const;
+    
+    // === CAMERA SETTINGS ===
+    // Runtime camera parameter control (requires camera to be initialized)
+    bool setCameraExposure(int exposure_value);  // -1 = auto, 0-100 = manual
+    int getCameraExposure();  // Removed const - ZED SDK method is not const
+    bool isExposureAuto();    // Removed const
+    
+    // Get current recording mode
+    RecordingMode getCurrentMode() const { return current_mode_; }
+    
     // === PRODUCTION READY FEATURES ===
     
     // Auto-segmentation DISABLED - no longer needed with NTFS/exFAT >4GB support
@@ -70,6 +93,13 @@ private:
     std::unique_ptr<std::thread> record_thread_;
     RecordingMode current_mode_;
     std::string current_video_path_;  // Aktueller Videodateipfad (.svo oder .svo2)
+    
+    // Performance testing: Depth computation without saving
+    std::atomic<bool> compute_depth_{false};
+    sl::DEPTH_MODE depth_mode_{sl::DEPTH_MODE::NEURAL};
+    std::atomic<float> depth_fps_{0.0f};
+    sl::Mat depth_map_;  // Reusable depth map buffer
+    std::atomic<int> current_frame_number_{0};  // Current frame number for synchronized naming
     
     // Auto-segmentation support - DISABLED (no longer needed with NTFS/exFAT)
     // std::atomic<bool> auto_segment_{false};

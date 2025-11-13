@@ -93,6 +93,14 @@ bool ZEDRecorder::init(RecordingMode mode) {
     // Production settings: Trust ZED SDK defaults for optimal performance
     init_params.camera_image_flip = sl::FLIP_MODE::OFF;
     
+    // Configure depth computation if enabled (for performance testing)
+    if (compute_depth_) {
+        init_params.depth_mode = depth_mode_;
+        std::cout << "[ZED] Init with depth computation enabled (mode set in init)" << std::endl;
+    } else {
+        init_params.depth_mode = sl::DEPTH_MODE::NONE;  // Disable depth for standard recording
+    }
+    
     // Mehrfache Öffnungsversuche bei USB-Problemen
     sl::ERROR_CODE err;
     int retry_count = 0;
@@ -192,8 +200,20 @@ bool ZEDRecorder::startRecording(const std::string& video_path, const std::strin
     
     recording_ = true;
     bytes_written_ = 0;
+    current_frame_number_ = 0;  // Reset frame counter for synchronized naming
     
     std::cout << "[ZED] Auto-segmentation: DISABLED (>4GB files supported on NTFS/exFAT)" << std::endl;
+    
+    // Configure depth computation if enabled (for performance testing)
+    if (compute_depth_) {
+        sl::RuntimeParameters runtime_params;
+        runtime_params.enable_depth = true;
+        runtime_params.confidence_threshold = 50;
+        runtime_params.texture_confidence_threshold = 100;
+        
+        // Note: Depth mode is set in InitParameters during init(), not in RuntimeParameters
+        std::cout << "[ZED] Depth computation enabled during SVO2 recording (performance test mode)" << std::endl;
+    }
     
     // Starte Aufnahme-Thread
     record_thread_ = std::make_unique<std::thread>(&ZEDRecorder::recordingLoop, this, actual_video_path);
@@ -233,6 +253,9 @@ void ZEDRecorder::recordingLoop(const std::string& video_path) {
         if (grab_result == sl::ERROR_CODE::SUCCESS) {
             consecutive_failures = 0;  // Reset failure counter
             
+            // Increment frame counter for synchronized depth map naming
+            current_frame_number_++;
+            
             // GAP DETECTION: Check for frame timing gaps
             auto current_frame_time = std::chrono::steady_clock::now();
             auto frame_gap = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -244,6 +267,30 @@ void ZEDRecorder::recordingLoop(const std::string& video_path) {
                 gap_warnings++;
             }
             last_frame_time = current_frame_time;
+            
+            // PERFORMANCE TEST: Compute depth map if enabled (without saving)
+            if (compute_depth_) {
+                auto depth_start = std::chrono::high_resolution_clock::now();
+                
+                // Retrieve depth map (triggers computation)
+                sl::ERROR_CODE depth_result = active_camera.retrieveMeasure(depth_map_, sl::MEASURE::DEPTH, sl::MEM::CPU);
+                
+                auto depth_end = std::chrono::high_resolution_clock::now();
+                auto depth_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(depth_end - depth_start).count();
+                
+                // Calculate depth computation FPS (rolling average)
+                if (depth_time_ms > 0) {
+                    float instant_depth_fps = 1000.0f / depth_time_ms;
+                    depth_fps_ = (depth_fps_ * 0.9f) + (instant_depth_fps * 0.1f); // Smooth average
+                }
+                
+                // Log performance periodically
+                static int depth_log_counter = 0;
+                if (++depth_log_counter % 90 == 0) {  // Log every ~3 seconds at 30fps
+                    std::cout << "[ZED PERF] Depth computation: " << depth_fps_.load() << " FPS (took " 
+                              << depth_time_ms << "ms)" << std::endl;
+                }
+            }
             
             // Intelligente Sensor-Erfassung basierend auf Modus
             bool capture_sensors = (sensor_skip_counter % sensor_skip_rate == 0);
@@ -444,6 +491,27 @@ void ZEDRecorder::stopRecording() {
         }
         
         std::cout << "Recording stopped successfully." << std::endl;
+    }
+}
+
+void ZEDRecorder::enableDepthComputation(bool enable, sl::DEPTH_MODE mode) {
+    compute_depth_ = enable;
+    depth_mode_ = mode;
+    
+    if (enable) {
+        std::cout << "[ZED] Depth computation enabled (mode: ";
+        switch (mode) {
+            case sl::DEPTH_MODE::NEURAL_PLUS: std::cout << "NEURAL_PLUS"; break;
+            case sl::DEPTH_MODE::NEURAL: std::cout << "NEURAL"; break;
+            case sl::DEPTH_MODE::ULTRA: std::cout << "ULTRA"; break;
+            case sl::DEPTH_MODE::QUALITY: std::cout << "QUALITY"; break;
+            case sl::DEPTH_MODE::PERFORMANCE: std::cout << "PERFORMANCE"; break;
+            case sl::DEPTH_MODE::NONE: std::cout << "NONE"; break;
+            default: std::cout << "UNKNOWN"; break;
+        }
+        std::cout << ") - Testing Jetson performance without saving depth" << std::endl;
+    } else {
+        std::cout << "[ZED] Depth computation disabled" << std::endl;
     }
 }
 
@@ -1005,4 +1073,68 @@ std::string ZEDRecorder::getModeName(RecordingMode mode) const {
         case RecordingMode::VGA_100FPS:   return "VGA@100fps";
         default: return "Unknown";
     }
+}
+
+bool ZEDRecorder::getLatestDepthMap(sl::Mat& out_depth) {
+    if (!compute_depth_ || !recording_) {
+        return false;
+    }
+    
+    // Copy the current depth map to output using ZED SDK clone method
+    if (depth_map_.isInit()) {
+        out_depth.clone(depth_map_);  // Correct ZED SDK syntax: dest.clone(source)
+        return true;
+    }
+    
+    return false;
+}
+int ZEDRecorder::getCurrentFrameNumber() const {
+    return current_frame_number_.load();
+}
+
+bool ZEDRecorder::setCameraExposure(int exposure_value) {
+    if (!zed_.isOpened()) {
+        std::cerr << "[ZED] Camera not initialized - cannot set exposure" << std::endl;
+        return false;
+    }
+    
+    if (exposure_value == -1) {
+        // Enable auto exposure
+        sl::ERROR_CODE err = zed_.setCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, -1);
+        if (err == sl::ERROR_CODE::SUCCESS) {
+            std::cout << "[ZED] Auto exposure enabled" << std::endl;
+            return true;
+        }
+    } else if (exposure_value >= 0 && exposure_value <= 100) {
+        // Set manual exposure (0-100)
+        sl::ERROR_CODE err = zed_.setCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, exposure_value);
+        if (err == sl::ERROR_CODE::SUCCESS) {
+            std::cout << "[ZED] Manual exposure set to: " << exposure_value << std::endl;
+            return true;
+        }
+    }
+    
+    std::cerr << "[ZED] Failed to set exposure (must be -1 for auto or 0-100 for manual)" << std::endl;
+    return false;
+}
+
+int ZEDRecorder::getCameraExposure() {
+    if (!zed_.isOpened()) {
+        return -1;
+    }
+    
+    int value = 0;
+    zed_.getCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, value);
+    return value;
+}
+
+bool ZEDRecorder::isExposureAuto() {
+    if (!zed_.isOpened()) {
+        return true;  // Default to auto if camera not open
+    }
+    
+    // In ZED SDK, exposure value of -1 or very high value indicates auto mode
+    int exposure = 0;
+    zed_.getCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, exposure);
+    return (exposure < 0 || exposure > 100);
 }

@@ -14,6 +14,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/common/storage
     ${CMAKE_CURRENT_SOURCE_DIR}/common/hardware/zed_camera
     ${CMAKE_CURRENT_SOURCE_DIR}/common/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/common/networking
 )
 
 # Gemeinsame Bibliotheken
@@ -21,6 +22,7 @@ add_subdirectory(common/hardware/lcd_display)
 add_subdirectory(common/hardware/zed_camera)
 add_subdirectory(common/storage)
 add_subdirectory(common/utils)
+add_subdirectory(common/networking)
 
 # Apps
 add_subdirectory(apps/data_collector)

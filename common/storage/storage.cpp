@@ -197,6 +197,65 @@ std::string StorageHandler::getMountPath() const {
     return mount_path_;
 }
 
+std::string StorageHandler::getRecordingDir() const {
+    return recording_dir_;
+}
+
+bool StorageHandler::createRawRecordingStructure() {
+    if (!createRecordingDir()) {
+        return false;
+    }
+    
+    // Create subdirectories for raw frame recording
+    try {
+        std::string left_dir = recording_dir_ + "/left";
+        std::string right_dir = recording_dir_ + "/right";
+        std::string depth_dir = recording_dir_ + "/depth";
+        
+        if (mkdir(left_dir.c_str(), 0755) != 0 && errno != EEXIST) {
+            std::cerr << "Error creating left directory: " << strerror(errno) << std::endl;
+            return false;
+        }
+        
+        if (mkdir(right_dir.c_str(), 0755) != 0 && errno != EEXIST) {
+            std::cerr << "Error creating right directory: " << strerror(errno) << std::endl;
+            return false;
+        }
+        
+        if (mkdir(depth_dir.c_str(), 0755) != 0 && errno != EEXIST) {
+            std::cerr << "Error creating depth directory: " << strerror(errno) << std::endl;
+            return false;
+        }
+        
+        std::cout << "Raw recording structure created: " << recording_dir_ << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Exception creating raw recording structure: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+std::string StorageHandler::getRawBasePath() const {
+    return recording_dir_;
+}
+
+std::string StorageHandler::getRawLeftPath() const {
+    return recording_dir_ + "/left";
+}
+
+std::string StorageHandler::getRawRightPath() const {
+    return recording_dir_ + "/right";
+}
+
+std::string StorageHandler::getRawDepthPath() const {
+    return recording_dir_ + "/depth";
+}
+
+std::string StorageHandler::getRawSensorPath() const {
+    return recording_dir_ + "/sensor_data.csv";
+}
+
 void StorageHandler::unmountUSB() {
     if (is_mounted_) {
         sync();  // Sicherstellen, dass alle Daten geschrieben wurden

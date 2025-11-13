@@ -9,6 +9,10 @@ alias zed-depth='/usr/local/zed/tools/ZED_Depth_Viewer'
 alias zed-sensor='/usr/local/zed/tools/ZED_Sensor_Viewer'
 
 # Drone System Shortcuts
+alias drone='sudo /home/angelo/Projects/Drone-Fieldtest/scripts/start_drone.sh'
+alias drone-stop='sudo /home/angelo/Projects/Drone-Fieldtest/scripts/stop_drone.sh'
+alias drone-log='tail -f /tmp/drone_controller.log'
+alias drone-netlog='sudo tail -f /var/log/drone_controller_network.log'
 alias drone-build='cd /home/angelo/Projects/Drone-Fieldtest && ./scripts/build.sh'
 alias drone-service-start='sudo systemctl start drone-recorder'
 alias drone-service-stop='sudo systemctl stop drone-recorder'

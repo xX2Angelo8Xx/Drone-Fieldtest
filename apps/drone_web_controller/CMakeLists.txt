@@ -15,6 +15,7 @@ target_include_directories(drone_web_controller PRIVATE
     ${CMAKE_SOURCE_DIR}/common/hardware/lcd_display
     ${CMAKE_SOURCE_DIR}/common/storage
     ${CMAKE_SOURCE_DIR}/common/utils
+    ${CMAKE_SOURCE_DIR}/common/networking
 )
 
 # Link libraries
@@ -22,6 +23,7 @@ target_link_libraries(drone_web_controller PRIVATE
     zed_camera
     lcd_display
     storage
+    safe_hotspot_manager
     Threads::Threads
 )
 

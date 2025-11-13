@@ -28,17 +28,16 @@ int main() {
     std::cout << "[MAIN] ✅ Drone Web Controller is ready!" << std::endl;
     std::cout << "[MAIN] 📶 WiFi Network: DroneController" << std::endl;
     std::cout << "[MAIN] 🔐 Password: drone123" << std::endl;
-    std::cout << "[MAIN] 🌐 Web Interface: http://192.168.4.1:8080" << std::endl;
+    std::cout << "[MAIN] 🌐 Web Interface: http://10.42.0.1:8080" << std::endl;
     std::cout << "[MAIN] 📱 Connect your phone to the WiFi and open the web interface" << std::endl;
     std::cout << "[MAIN] Press Ctrl+C to shutdown gracefully" << std::endl;
     
-    // Keep main thread alive
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        // Check if shutdown was requested
-        // (The signal handler in DroneWebController will handle shutdown)
+    // Keep main thread alive until shutdown is requested
+    while (!controller.isShutdownRequested()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
+    
+    std::cout << "[MAIN] Shutdown signal received, exiting..." << std::endl;
     
     return 0;
 }

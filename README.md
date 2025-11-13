@@ -294,6 +294,16 @@ Boot Process:
 - Files can exceed 4GB without corruption
 - Example: 4-minute HD720@30fps = ~6.6GB single file
 
+## LCD Hardware Status
+
+Note: During the most recent field testing the I2C LCD display (expected on `/dev/i2c-7`, address `0x27`) experienced a hardware failure and has been removed from active tests.
+
+- Symptom: Display backlight and characters were not visible despite correct wiring and power LED being on.
+- Temporary action: software includes a robust LCD driver and a small CLI test utility (`tools/lcd_display_tool`) and several diagnostic tools (`i2c_lcd_tester`, `simple_lcd_test`, `lcd_backlight_test`) to verify I2C connectivity and initialization once replacement hardware is available.
+- Current status: Hardware faulty — a replacement has been ordered. LCD features are implemented in software but are currently disabled in automated field runs until the replacement arrives and is verified.
+
+When you reconnect a replacement display, run the `i2c_lcd_tester` and `tools/lcd_display_tool` to validate operation and then re-enable LCD usage in the autostart scripts if desired.
+
 ### Wireless Control System  
 - Phone-based web interface with WiFi hotspot for field operation
 - Network: WiFi AP "DroneController" / Password: "drone123" 

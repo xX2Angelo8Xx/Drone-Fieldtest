@@ -4,33 +4,28 @@
 #include <iomanip>
 
 LCDHandler::LCDHandler() 
-    : lcd_(nullptr), update_interval_ms_(1000), current_line1_(""), current_line2_("") {
+    : lcd_(nullptr), update_interval_ms_(1000), current_line1_(""), current_line2_(""), is_initialized_(false) {
+    // Use /dev/i2c-7 for Jetson Orin Nano (as per Copilot instructions)
+    lcd_ = std::make_unique<LCD_I2C>("/dev/i2c-7", 0x27, true);
 }
 
 LCDHandler::~LCDHandler() {
-    cleanup();
+    // LCD_I2C-Destruktor wird automatisch aufgerufen
 }
 
 bool LCDHandler::init() {
-    try {
-        // Use /dev/i2c-7 for Jetson Orin Nano (as per Copilot instructions)
-        lcd_ = new LCD_I2C("/dev/i2c-7", 0x27, true);
-        if (lcd_->init()) {
-            clear();
-            showStartupMessage();
-            return true;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "LCD initialization failed: " << e.what() << std::endl;
+    bool success = lcd_->init();
+    if (success) {
+        is_initialized_ = true;
+        showStartupMessage();
     }
-    return false;
+    return success;
 }
 
 void LCDHandler::cleanup() {
     if (lcd_) {
         clear();
-        delete lcd_;
-        lcd_ = nullptr;
+        lcd_.reset();
     }
 }
 
@@ -61,7 +56,7 @@ std::string LCDHandler::formatTime(int seconds) {
 }
 
 void LCDHandler::displayMessage(const std::string& line1, const std::string& line2) {
-    if (!lcd_) return;
+    if (!is_initialized_) return;
     
     std::string l1 = truncateToWidth(line1, 16);
     std::string l2 = truncateToWidth(line2, 16);
@@ -81,11 +76,10 @@ void LCDHandler::displayMessage(const std::string& line1, const std::string& lin
 }
 
 void LCDHandler::clear() {
-    if (lcd_) {
-        lcd_->clear();
-        current_line1_.clear();
-        current_line2_.clear();
-    }
+    if (!is_initialized_) return;
+    lcd_->clear();
+    current_line1_ = "";
+    current_line2_ = "";
 }
 
 void LCDHandler::showStartupMessage() {

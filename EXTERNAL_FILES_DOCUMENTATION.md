@@ -237,3 +237,19 @@ These external files are tightly integrated with the main project:
 - **Command aliases** provide user convenience
 
 All external files are documented here to ensure complete system restoration if needed.
+
+## LCD Hardware Note
+
+The project expects a PCF8574-backed HD44780 I2C LCD on `/dev/i2c-7` (address `0x27`). During the most recent field test the physical LCD failed (dark display despite successful software initialization). The repository contains software and test utilities to validate a replacement LCD once it's installed:
+
+- `tools/lcd_display_tool` — CLI to write two-line messages from scripts
+- `build/tools/i2c_lcd_tester` / `i2c_lcd_tester` — interactive tester (backlight, init sequences)
+- `build/tools/simple_lcd_test` — quick initialization test
+
+Replacement steps:
+1. Install the replacement LCD and verify correct wiring and contrast potentiometer.
+2. Run the `i2c_scanner` to confirm the device shows up on the expected bus and address.
+3. Run `i2c_lcd_tester` and `simple_lcd_test` to validate backlight and display initialization.
+4. Use `tools/lcd_display_tool "Autostart" "Started!"` to verify messages from autostart scripts.
+
+If the LCD still does not show text after these steps, check wiring/power, the display contrast pot, and run `dmesg` for any I2C errors.

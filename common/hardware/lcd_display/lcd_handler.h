@@ -5,14 +5,16 @@
 #include <string>
 #include <chrono>
 #include <vector>
+#include <memory>
 
 class LCDHandler {
 private:
-    LCD_I2C* lcd_;
+    std::unique_ptr<LCD_I2C> lcd_;
     std::chrono::steady_clock::time_point last_update_time_;
     int update_interval_ms_;
     std::string current_line1_;
     std::string current_line2_;
+    bool is_initialized_;
     
     // Hilfsfunktionen
     std::string truncateToWidth(const std::string& text, int max_width = 16);
