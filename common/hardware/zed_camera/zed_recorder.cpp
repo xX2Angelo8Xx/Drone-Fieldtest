@@ -171,10 +171,10 @@ bool ZEDRecorder::startRecording(const std::string& video_path, const std::strin
     // ZED SDK kann .svo2 statt .svo erstellen, prüfe beide
     bool file_created = false;
     std::string final_video_path = actual_video_path;
-    
+
     for (int i = 0; i < 30 && !file_created; i++) {  // 3 Sekunden warten
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        
+
         // Prüfe sowohl .svo als auch .svo2
         if (std::filesystem::exists(actual_video_path)) {
             file_created = true;
@@ -215,6 +215,11 @@ bool ZEDRecorder::startRecording(const std::string& video_path, const std::strin
         std::cout << "[ZED] Depth computation enabled during SVO2 recording (performance test mode)" << std::endl;
     }
     
+    // CRITICAL: Give ZED recording subsystem time to stabilize before first grab()
+    // Recording with depth computation needs extra initialization time
+    std::cout << "[ZED] Waiting for recording subsystem to stabilize..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
     // Starte Aufnahme-Thread
     record_thread_ = std::make_unique<std::thread>(&ZEDRecorder::recordingLoop, this, actual_video_path);
     
@@ -243,6 +248,10 @@ void ZEDRecorder::recordingLoop(const std::string& video_path) {
     auto last_frame_time = std::chrono::steady_clock::now();
     int gap_warnings = 0;
     
+    // WARMUP: Skip failure counting for first few frames (recording subsystem stabilizing)
+    int warmup_frames = 5;
+    bool warmup_complete = false;
+    
     while (recording_) {
         // Use appropriate camera instance for grabbing frames
         sl::Camera& active_camera = (dual_camera_mode_ && using_secondary_) ? zed_secondary_ : zed_;
@@ -252,6 +261,15 @@ void ZEDRecorder::recordingLoop(const std::string& video_path) {
         
         if (grab_result == sl::ERROR_CODE::SUCCESS) {
             consecutive_failures = 0;  // Reset failure counter
+            
+            // Check if warmup is complete
+            if (!warmup_complete) {
+                warmup_frames--;
+                if (warmup_frames <= 0) {
+                    warmup_complete = true;
+                    std::cout << "[ZED] Recording warmup complete, frame capture stable" << std::endl;
+                }
+            }
             
             // Increment frame counter for synchronized depth map naming
             current_frame_number_++;
@@ -365,9 +383,17 @@ void ZEDRecorder::recordingLoop(const std::string& video_path) {
             }
         } else {
             // Handle grab failures (USB reset, disconnection, etc.)
-            consecutive_failures++;
-            std::cerr << "ZED grab failed: " << grab_result 
-                      << " (failure " << consecutive_failures << "/" << max_consecutive_failures << ")" << std::endl;
+            
+            // During warmup, don't count failures (recording subsystem may still be stabilizing)
+            if (warmup_complete) {
+                consecutive_failures++;
+                std::cerr << "ZED grab failed: " << grab_result 
+                          << " (failure " << consecutive_failures << "/" << max_consecutive_failures << ")" << std::endl;
+            } else {
+                // Warmup phase - log but don't fail
+                std::cout << "[ZED] Warmup: Skipping transient error " << grab_result 
+                          << " (" << warmup_frames << " warmup frames remaining)" << std::endl;
+            }
             
             if (consecutive_failures >= max_consecutive_failures) {
                 std::cerr << "Too many consecutive ZED failures, stopping recording to prevent corruption" << std::endl;

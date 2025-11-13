@@ -116,8 +116,9 @@ bool DroneWebController::startRecording() {
             svo_recorder_.reset();
             
             // CRITICAL: Give ZED SDK time to release USB resources
-            std::cout << "[WEB_CONTROLLER] Waiting for camera resources to be released..." << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            // ZED 2i needs minimum 3 seconds to fully release hardware
+            std::cout << "[WEB_CONTROLLER] Waiting 3s for camera hardware to release..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(3));
             
             updateLCD("Camera Init", "Depth mode...");
             
@@ -128,8 +129,25 @@ bool DroneWebController::startRecording() {
             sl::DEPTH_MODE zed_depth_mode = convertDepthMode(depth_mode_);
             svo_recorder_->enableDepthComputation(true, zed_depth_mode);
             
-            if (!svo_recorder_->init(RecordingMode::HD720_30FPS)) {
-                std::cerr << "[WEB_CONTROLLER] Failed to reinitialize camera with depth" << std::endl;
+            // Try initialization with retry (corrupted frames can happen on first attempt)
+            bool init_success = false;
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                std::cout << "[WEB_CONTROLLER] Camera init attempt " << attempt << "/3..." << std::endl;
+                
+                if (svo_recorder_->init(RecordingMode::HD720_30FPS)) {
+                    init_success = true;
+                    std::cout << "[WEB_CONTROLLER] Camera initialized successfully" << std::endl;
+                    break;
+                }
+                
+                if (attempt < 3) {
+                    std::cout << "[WEB_CONTROLLER] Init failed, waiting 2s before retry..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
+            }
+            
+            if (!init_success) {
+                std::cerr << "[WEB_CONTROLLER] Failed to reinitialize camera with depth after 3 attempts" << std::endl;
                 updateLCD("Init Error", "Camera failed");
                 return false;
             }
@@ -526,6 +544,10 @@ void DroneWebController::setDepthMode(DepthMode depth_mode) {
                 raw_recorder_.reset();
             }
             
+            // CRITICAL: Wait for camera hardware to fully release
+            std::cout << "[WEB_CONTROLLER] Waiting 3s for camera hardware to release..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            
             raw_recorder_ = std::make_unique<RawFrameRecorder>();
             if (!raw_recorder_->init(RecordingMode::HD720_30FPS, depth_mode)) {
                 std::cerr << "[WEB_CONTROLLER] Failed to reinitialize raw recorder" << std::endl;
@@ -544,6 +566,10 @@ void DroneWebController::setDepthMode(DepthMode depth_mode) {
                 svo_recorder_->close();
                 svo_recorder_.reset();
             }
+            
+            // CRITICAL: Wait for camera hardware to fully release
+            std::cout << "[WEB_CONTROLLER] Waiting 3s for camera hardware to release..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(3));
             
             svo_recorder_ = std::make_unique<ZEDRecorder>();
             
