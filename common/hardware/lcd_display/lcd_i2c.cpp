@@ -38,28 +38,34 @@ bool LCD_I2C::init() {
         return false;
     }
 
-    // Initial sequence matching the successful Python implementation
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Initial sequence matching the successful Python implementation with longer delays
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // Longer power-on delay
     
     // 4-bit initialization sequence
     write4bits(0x30);  // 0x30 = 0011 0000
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));  // Longer between init commands
+    write4bits(0x30);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     write4bits(0x30);
-    std::this_thread::sleep_for(std::chrono::microseconds(150));
-    write4bits(0x30);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
     write4bits(0x20);  // 0x20 = 0010 0000 (4-bit mode)
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
     // Function set: 4-bit, 2 line, 5x8 dots
     writeCommand(0x28);  
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
     // Display off
     writeCommand(0x08);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
     // Clear display
     writeCommand(0x01);
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));  // Clear needs more time
     // Entry mode set
     writeCommand(0x06);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
     // Display on, cursor off, blink off
     writeCommand(0x0C);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
     std::cout << "LCD_I2C: Initialized successfully on " << dev_ << " at address 0x" 
               << std::hex << addr_ << std::dec << std::endl;
@@ -78,9 +84,9 @@ void LCD_I2C::expanderWrite(uint8_t data) {
 
 void LCD_I2C::pulseEnable(uint8_t data) {
     expanderWrite(data | LCD_EN);
-    std::this_thread::sleep_for(std::chrono::microseconds(500));
+    std::this_thread::sleep_for(std::chrono::microseconds(5000));  // 5ms - MAXIMUM stability
     expanderWrite(data & ~LCD_EN);
-    std::this_thread::sleep_for(std::chrono::microseconds(1000));
+    std::this_thread::sleep_for(std::chrono::microseconds(5000));  // 5ms
 }
 
 void LCD_I2C::write4bits(uint8_t data) {

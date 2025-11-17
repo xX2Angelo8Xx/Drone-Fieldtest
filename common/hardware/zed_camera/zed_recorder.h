@@ -46,6 +46,9 @@ public:
     // Get current frame number (for synchronized depth map naming)
     int getCurrentFrameNumber() const;
     
+    // Get camera reference (for DepthDataWriter direct access)
+    sl::Camera* getCamera() { return &zed_; }
+    
     // === CAMERA SETTINGS ===
     // Runtime camera parameter control (requires camera to be initialized)
     bool setCameraExposure(int exposure_value);  // -1 = auto, 0-100 = manual

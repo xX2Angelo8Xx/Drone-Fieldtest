@@ -40,3 +40,15 @@ target_include_directories(lcd_display_tool PRIVATE
 target_link_libraries(lcd_display_tool
     lcd_display
 )
+
+# Add depth data viewer tool
+add_executable(depth_viewer depth_viewer.cpp)
+
+# Link libraries for depth viewer
+target_link_libraries(depth_viewer
+    /usr/lib/aarch64-linux-gnu/libopencv_core.so.4.5.4d
+    /usr/lib/aarch64-linux-gnu/libopencv_imgproc.so.4.5.4d
+    /usr/lib/aarch64-linux-gnu/libopencv_imgcodecs.so.4.5.4d
+    /usr/lib/aarch64-linux-gnu/libopencv_highgui.so.4.5.4d
+    stdc++fs
+)

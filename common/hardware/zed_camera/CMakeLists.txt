@@ -8,6 +8,7 @@ set(OpenCV_LIBS
 add_library(zed_camera
     zed_recorder.cpp
     raw_frame_recorder.cpp
+    depth_data_writer.cpp
 )
 
 target_include_directories(zed_camera PUBLIC 

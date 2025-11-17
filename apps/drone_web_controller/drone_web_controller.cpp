@@ -36,38 +36,46 @@ bool DroneWebController::initialize() {
     std::cout << "[WEB_CONTROLLER] Initializing..." << std::endl;
     
     try {
-        // Initialize ZED recorders based on mode
-        // For now, initialize the default SVO2 recorder
-        // Raw recorder will be initialized on-demand when mode is switched
-        svo_recorder_ = std::make_unique<ZEDRecorder>();
-        if (!svo_recorder_->init()) {
-            std::cout << "[WEB_CONTROLLER] ZED camera initialization failed" << std::endl;
-            return false;
-        }
-        
-        // Initialize LCD display (no constructor parameters)
+        // Initialize LCD display FIRST for user feedback
         lcd_ = std::make_unique<LCDHandler>();
         if (!lcd_->init()) {
             std::cout << "[WEB_CONTROLLER] LCD initialization failed" << std::endl;
             return false;
         }
-        lcd_->displayMessage("Drone Control", "Starting...");
+        
+        // Show single consolidated init message (avoid LCD spam)
+        lcd_->displayMessage("System Init", "Please wait...");
+        std::this_thread::sleep_for(std::chrono::seconds(1));  // Let message be readable
+        
+        // Initialize ZED recorders based on mode
+        // For now, initialize the default SVO2 recorder
+        // Raw recorder will be initialized on-demand when mode is switched
+        svo_recorder_ = std::make_unique<ZEDRecorder>();
+        if (!svo_recorder_->init(camera_resolution_)) {  // Use member variable instead of default
+            std::cout << "[WEB_CONTROLLER] ZED camera initialization failed" << std::endl;
+            lcd_->displayMessage("ERROR", "Camera Failed");
+            return false;
+        }
+        std::cout << "[WEB_CONTROLLER] ZED camera initialized with resolution: " 
+                  << svo_recorder_->getModeName(camera_resolution_) << std::endl;
         
         // Initialize storage
         storage_ = std::make_unique<StorageHandler>();
         if (!storage_->findAndMountUSB("DRONE_DATA")) {
             std::cout << "[WEB_CONTROLLER] USB storage not detected" << std::endl;
+            lcd_->displayMessage("ERROR", "No USB Storage");
             return false;
         }
         
-        updateLCD("Initialization", "Complete!");
+        // Show success message and hold it for visibility
+        updateLCD("System Ready", "Connect to WiFi");
+        std::this_thread::sleep_for(std::chrono::seconds(2));  // Keep message visible
         
         // Start system monitor thread
         system_monitor_thread_ = std::make_unique<std::thread>(&DroneWebController::systemMonitorLoop, this);
         
         std::cout << "[WEB_CONTROLLER] Initialization complete" << std::endl;
-        std::cout << "[WEB_CONTROLLER] Recording mode: " 
-                  << (recording_mode_ == RecordingModeType::SVO2 ? "SVO2" : "RAW_FRAMES") << std::endl;
+        std::cout << "[WEB_CONTROLLER] Camera: " << svo_recorder_->getModeName(camera_resolution_) << std::endl;
         return true;
         
     } catch (const std::exception& e) {
@@ -85,22 +93,29 @@ bool DroneWebController::startRecording() {
     std::cout << "[WEB_CONTROLLER] Mode: ";
     switch (recording_mode_) {
         case RecordingModeType::SVO2: std::cout << "SVO2"; break;
-        case RecordingModeType::SVO2_DEPTH_VIZ: 
-            std::cout << "SVO2 + Depth (" << depth_recording_fps_.load() << " FPS viz)"; 
+        case RecordingModeType::SVO2_DEPTH_INFO:
+            std::cout << "SVO2 + Depth Info (" << depth_recording_fps_.load() << " FPS raw data)";
+            break;
+        case RecordingModeType::SVO2_DEPTH_IMAGES: 
+            std::cout << "SVO2 + Depth Images (" << depth_recording_fps_.load() << " FPS viz)"; 
             break;
         case RecordingModeType::RAW_FRAMES: std::cout << "RAW_FRAMES"; break;
     }
     std::cout << std::endl;
     
-    updateLCD("Starting", "Recording...");
+    // Single consolidated LCD message - avoid rapid updates
+    updateLCD("Recording", "Starting...");
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Let message be visible
     
     // Branch based on recording mode
     if (recording_mode_ == RecordingModeType::SVO2 || 
-        recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+        recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO ||
+        recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
         
         // Check if we need to reinitialize camera with depth mode
         bool needs_reinit = false;
-        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO ||
+            recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
             if (!svo_recorder_->isDepthComputationEnabled()) {
                 needs_reinit = true;
                 std::cout << "[WEB_CONTROLLER] Camera needs reinitialization with depth mode" << std::endl;
@@ -109,7 +124,7 @@ bool DroneWebController::startRecording() {
         
         // Reinitialize camera if depth mode changed
         if (needs_reinit) {
-            updateLCD("Camera Init", "Closing...");
+            updateLCD("Reinitializing", "Camera...");  // Consolidated message
             
             // Close and destroy the old recorder
             svo_recorder_->close();
@@ -120,7 +135,7 @@ bool DroneWebController::startRecording() {
             std::cout << "[WEB_CONTROLLER] Waiting 3s for camera hardware to release..." << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(3));
             
-            updateLCD("Camera Init", "Depth mode...");
+            // Don't update LCD during init - keep "Reinitializing Camera..." visible
             
             // Create new recorder
             svo_recorder_ = std::make_unique<ZEDRecorder>();
@@ -134,7 +149,7 @@ bool DroneWebController::startRecording() {
             for (int attempt = 1; attempt <= 3; attempt++) {
                 std::cout << "[WEB_CONTROLLER] Camera init attempt " << attempt << "/3..." << std::endl;
                 
-                if (svo_recorder_->init(RecordingMode::HD720_30FPS)) {
+                if (svo_recorder_->init(camera_resolution_)) {  // Use saved resolution!
                     init_success = true;
                     std::cout << "[WEB_CONTROLLER] Camera initialized successfully" << std::endl;
                     break;
@@ -149,11 +164,12 @@ bool DroneWebController::startRecording() {
             if (!init_success) {
                 std::cerr << "[WEB_CONTROLLER] Failed to reinitialize camera with depth after 3 attempts" << std::endl;
                 updateLCD("Init Error", "Camera failed");
+                std::this_thread::sleep_for(std::chrono::seconds(2));  // Keep error visible
                 return false;
             }
             
-            std::cout << "[WEB_CONTROLLER] Camera reinitialized with depth mode: " 
-                      << getDepthModeName(depth_mode_) << std::endl;
+            std::cout << "[WEB_CONTROLLER] Camera reinitialized: " << svo_recorder_->getModeName(camera_resolution_)
+                      << " with depth mode: " << getDepthModeName(depth_mode_) << std::endl;
         }
         
         // SVO2 Recording Modes
@@ -166,8 +182,31 @@ bool DroneWebController::startRecording() {
         std::string video_path = storage_->getVideoPath();
         std::string sensor_path = storage_->getSensorDataPath();
         
-        // Depth visualization setup
-        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+        // Depth data recording setup (SVO2_DEPTH_INFO mode)
+        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO) {
+            std::cout << "[WEB_CONTROLLER] SVO2_DEPTH_INFO mode: Raw 32-bit depth data recording" << std::endl;
+            
+            // Create depth_data directory
+            std::string depth_data_dir = storage_->getRecordingDir() + "/depth_data";
+            if (!fs::create_directories(depth_data_dir)) {
+                std::cout << "[WEB_CONTROLLER] Warning: depth_data directory already exists" << std::endl;
+            }
+            std::cout << "[WEB_CONTROLLER] Depth data directory: " << depth_data_dir << std::endl;
+            
+            // Initialize DepthDataWriter
+            depth_data_writer_ = std::make_unique<DepthDataWriter>();
+            if (!depth_data_writer_->init(depth_data_dir, depth_recording_fps_.load())) {
+                std::cout << "[WEB_CONTROLLER] Failed to initialize DepthDataWriter" << std::endl;
+                updateLCD("Recording Error", "Depth Init Fail");
+                depth_data_writer_.reset();
+                return false;
+            }
+            std::cout << "[WEB_CONTROLLER] DepthDataWriter initialized (target: " 
+                      << depth_recording_fps_.load() << " FPS)" << std::endl;
+        }
+        
+        // Depth visualization setup (SVO2_DEPTH_IMAGES mode)
+        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
             int fps = depth_recording_fps_.load();
             if (fps > 0) {
                 std::cout << "[WEB_CONTROLLER] Depth visualization enabled (" << fps << " FPS)" << std::endl;
@@ -187,6 +226,12 @@ bool DroneWebController::startRecording() {
             std::cout << "[WEB_CONTROLLER] Failed to start SVO2 recording" << std::endl;
             updateLCD("Recording Error", "ZED Failed");
             return false;
+        }
+        
+        // Start DepthDataWriter after SVO recording is running (SVO2_DEPTH_INFO mode)
+        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO && depth_data_writer_) {
+            depth_data_writer_->start(*svo_recorder_->getCamera());
+            std::cout << "[WEB_CONTROLLER] DepthDataWriter started successfully" << std::endl;
         }
         
         current_recording_path_ = video_path;
@@ -234,7 +279,7 @@ bool DroneWebController::startRecording() {
     recording_start_time_ = std::chrono::steady_clock::now();
     
     // Start depth visualization thread if in SVO2 + Depth Viz mode
-    if (recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+    if (recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
         depth_viz_running_ = true;
         depth_viz_thread_ = std::make_unique<std::thread>(&DroneWebController::depthVisualizationLoop, this);
         std::cout << "[WEB_CONTROLLER] Depth visualization thread started" << std::endl;
@@ -260,9 +305,19 @@ bool DroneWebController::stopRecording() {
     
     // Stop appropriate recorder based on mode
     if (recording_mode_ == RecordingModeType::SVO2 ||
-        recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+        recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO ||
+        recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
         
-        // Stop depth visualization thread if running
+        // Stop depth data writer if running (SVO2_DEPTH_INFO mode)
+        if (depth_data_writer_) {
+            std::cout << "[WEB_CONTROLLER] Stopping DepthDataWriter..." << std::endl;
+            depth_data_writer_->stop();
+            int frame_count = depth_data_writer_->getFrameCount();
+            std::cout << "[WEB_CONTROLLER] DepthDataWriter stopped. Total frames: " << frame_count << std::endl;
+            depth_data_writer_.reset();
+        }
+        
+        // Stop depth visualization thread if running (SVO2_DEPTH_IMAGES mode)
         if (depth_viz_running_) {
             std::cout << "[WEB_CONTROLLER] Stopping depth visualization thread..." << std::endl;
             depth_viz_running_ = false;
@@ -332,7 +387,8 @@ RecordingStatus DroneWebController::getStatus() const {
     // Set depth mode name
     if (recording_mode_ == RecordingModeType::RAW_FRAMES && raw_recorder_) {
         status.depth_mode = raw_recorder_->getDepthModeName(depth_mode_);
-    } else if (recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+    } else if (recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO ||
+               recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
         status.depth_mode = getDepthModeName(depth_mode_);
     } else {
         status.depth_mode = "N/A";
@@ -346,7 +402,8 @@ RecordingStatus DroneWebController::getStatus() const {
         
         // Get stats based on recording mode
         if (recording_mode_ == RecordingModeType::SVO2 ||
-            recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+            recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO ||
+            recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
             if (svo_recorder_) {
                 status.bytes_written = svo_recorder_->getBytesWritten();
                 
@@ -397,19 +454,80 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
         return;
     }
     
+    RecordingModeType old_mode = recording_mode_;
     recording_mode_ = mode;
-    std::cout << "[WEB_CONTROLLER] Recording mode set to: " 
-              << (mode == RecordingModeType::SVO2 ? "SVO2" : "RAW_FRAMES") << std::endl;
     
-    // If switching to RAW mode, close SVO recorder
+    std::cout << "[WEB_CONTROLLER] Recording mode change: ";
+    switch(mode) {
+        case RecordingModeType::SVO2: std::cout << "SVO2"; break;
+        case RecordingModeType::SVO2_DEPTH_INFO: std::cout << "SVO2 + Depth Info"; break;
+        case RecordingModeType::SVO2_DEPTH_IMAGES: std::cout << "SVO2 + Depth Images"; break;
+        case RecordingModeType::RAW_FRAMES: std::cout << "RAW_FRAMES"; break;
+    }
+    std::cout << std::endl;
+    
+    // Show consolidated message on LCD (avoid spam)
+    updateLCD("Mode Change", "Reinitializing...");
+    
+    bool needs_reinit = false;
+    
+    // If switching TO RAW mode from SVO mode
     if (mode == RecordingModeType::RAW_FRAMES && svo_recorder_) {
+        std::cout << "[WEB_CONTROLLER] Switching from SVO to RAW mode - reinitializing..." << std::endl;
         svo_recorder_->close();
         svo_recorder_.reset();
+        needs_reinit = true;
     }
-    // If switching to SVO2 mode, close raw recorder
-    else if (mode == RecordingModeType::SVO2 && raw_recorder_) {
+    // If switching TO SVO mode from RAW mode
+    else if (mode != RecordingModeType::RAW_FRAMES && old_mode == RecordingModeType::RAW_FRAMES && raw_recorder_) {
+        std::cout << "[WEB_CONTROLLER] Switching from RAW to SVO mode - reinitializing..." << std::endl;
         raw_recorder_->close();
         raw_recorder_.reset();
+        needs_reinit = true;
+    }
+    // If switching between SVO depth modes
+    else if (old_mode != mode && (mode == RecordingModeType::SVO2_DEPTH_INFO || mode == RecordingModeType::SVO2_DEPTH_IMAGES)) {
+        std::cout << "[WEB_CONTROLLER] Switching SVO depth mode - reinitializing..." << std::endl;
+        if (svo_recorder_) {
+            svo_recorder_->close();
+            svo_recorder_.reset();
+        }
+        needs_reinit = true;
+    }
+    
+    // Reinitialize with SAVED camera_resolution_ (preserve FPS settings!)
+    if (needs_reinit) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Brief pause for hardware
+        
+        if (mode == RecordingModeType::RAW_FRAMES) {
+            raw_recorder_ = std::make_unique<RawFrameRecorder>();
+            if (!raw_recorder_->init(camera_resolution_, depth_mode_)) {
+                std::cerr << "[WEB_CONTROLLER] Failed to initialize RAW recorder" << std::endl;
+                updateLCD("Init Error", "RAW Failed");
+            } else {
+                std::cout << "[WEB_CONTROLLER] RAW recorder initialized successfully" << std::endl;
+                updateLCD("RAW Mode", "Ready");
+            }
+        } else {
+            svo_recorder_ = std::make_unique<ZEDRecorder>();
+            
+            // Enable depth computation if needed
+            if (mode == RecordingModeType::SVO2_DEPTH_INFO || mode == RecordingModeType::SVO2_DEPTH_IMAGES) {
+                sl::DEPTH_MODE zed_depth_mode = convertDepthMode(depth_mode_);
+                svo_recorder_->enableDepthComputation(true, zed_depth_mode);
+            }
+            
+            if (!svo_recorder_->init(camera_resolution_)) {
+                std::cerr << "[WEB_CONTROLLER] Failed to initialize SVO recorder" << std::endl;
+                updateLCD("Init Error", "SVO Failed");
+            } else {
+                std::cout << "[WEB_CONTROLLER] SVO recorder initialized with: " << svo_recorder_->getModeName(camera_resolution_) << std::endl;
+                updateLCD("SVO Mode", "Ready");
+            }
+        }
+        
+        // Show success message longer for visibility
+        std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 }
 
@@ -421,6 +539,9 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
         return;
     }
     
+    // Store new resolution setting
+    camera_resolution_ = mode;
+    
     camera_initializing_ = true;
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
@@ -429,7 +550,8 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
     
     updateLCD("Camera Init", "New resolution");
     
-    std::cout << "[WEB_CONTROLLER] Changing camera resolution/FPS..." << std::endl;
+    std::cout << "[WEB_CONTROLLER] Changing camera resolution/FPS to: " 
+              << svo_recorder_->getModeName(mode) << std::endl;
     
     // Close and reinitialize camera
     if (svo_recorder_) {
@@ -455,8 +577,9 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
     } else {
         svo_recorder_ = std::make_unique<ZEDRecorder>();
         
-        // Re-enable depth if needed
-        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+        // Re-enable depth computation if needed (for both DEPTH_INFO and DEPTH_IMAGES modes)
+        if (recording_mode_ == RecordingModeType::SVO2_DEPTH_INFO ||
+            recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
             sl::DEPTH_MODE zed_depth_mode = convertDepthMode(depth_mode_);
             svo_recorder_->enableDepthComputation(true, zed_depth_mode);
         }
@@ -492,12 +615,8 @@ void DroneWebController::setCameraExposure(int exposure) {
 }
 
 RecordingMode DroneWebController::getCameraResolution() {
-    if (svo_recorder_) {
-        return svo_recorder_->getCurrentMode();
-    } else if (raw_recorder_) {
-        return raw_recorder_->getCurrentMode();
-    }
-    return RecordingMode::HD720_30FPS;  // Default
+    // Return stored resolution setting (more reliable than querying recorder)
+    return camera_resolution_;
 }
 
 int DroneWebController::getCameraExposure() {
@@ -524,7 +643,7 @@ void DroneWebController::setDepthMode(DepthMode depth_mode) {
     
     // Need to reinitialize camera for both RAW and SVO2+Depth modes
     if (recording_mode_ == RecordingModeType::RAW_FRAMES || 
-        recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+        recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
         
         camera_initializing_ = true;
         
@@ -574,7 +693,7 @@ void DroneWebController::setDepthMode(DepthMode depth_mode) {
             svo_recorder_ = std::make_unique<ZEDRecorder>();
             
             // Enable depth computation BEFORE init() so camera opens with correct depth mode
-            if (recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) {
+            if (recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) {
                 
                 sl::DEPTH_MODE zed_depth_mode;
                 switch (depth_mode) {
@@ -776,6 +895,8 @@ void DroneWebController::restartWiFiIfNeeded() {
 }
 
 void DroneWebController::recordingMonitorLoop() {
+    last_lcd_update_ = std::chrono::steady_clock::now();
+    
     while (recording_active_ && !shutdown_requested_) {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recording_start_time_).count();
@@ -798,6 +919,65 @@ void DroneWebController::recordingMonitorLoop() {
             current_state_ = RecorderState::IDLE;
             updateLCD("Recording", "Completed");
             break;
+        }
+        
+        // Update LCD with recording timer - alternating display every 3 seconds
+        auto lcd_elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_lcd_update_).count();
+        if (lcd_elapsed >= 3) {
+            std::ostringstream line1, line2;
+            
+            // Line 1: Always show time n/240s
+            line1 << "Time " << elapsed << "/" << recording_duration_seconds_ << "s";
+            
+            // Line 2: Alternate between mode, resolution, and FPS
+            switch (lcd_display_cycle_) {
+                case 0: {
+                    // Show recording mode
+                    std::string mode_name;
+                    switch (recording_mode_) {
+                        case RecordingModeType::SVO2: mode_name = "SVO2"; break;
+                        case RecordingModeType::SVO2_DEPTH_INFO: mode_name = "SVO2+DepthInfo"; break;
+                        case RecordingModeType::SVO2_DEPTH_IMAGES: mode_name = "SVO2+DepthImg"; break;
+                        case RecordingModeType::RAW_FRAMES: mode_name = "RAW"; break;
+                    }
+                    line2 << "Mode: " << mode_name;
+                    break;
+                }
+                case 1: {
+                    // Show resolution
+                    std::string res_name;
+                    switch (camera_resolution_) {
+                        case RecordingMode::HD2K_15FPS: res_name = "HD2K 1242p"; break;
+                        case RecordingMode::HD1080_30FPS: res_name = "HD1080 1080p"; break;
+                        case RecordingMode::HD720_60FPS: res_name = "HD720 720p"; break;
+                        case RecordingMode::HD720_30FPS: res_name = "HD720 720p"; break;
+                        case RecordingMode::HD720_15FPS: res_name = "HD720 720p"; break;
+                        case RecordingMode::VGA_100FPS: res_name = "VGA 376p"; break;
+                    }
+                    line2 << res_name;
+                    break;
+                }
+                case 2: {
+                    // Show FPS
+                    int fps;
+                    switch (camera_resolution_) {
+                        case RecordingMode::HD2K_15FPS: fps = 15; break;
+                        case RecordingMode::HD1080_30FPS: fps = 30; break;
+                        case RecordingMode::HD720_60FPS: fps = 60; break;
+                        case RecordingMode::HD720_30FPS: fps = 30; break;
+                        case RecordingMode::HD720_15FPS: fps = 15; break;
+                        case RecordingMode::VGA_100FPS: fps = 100; break;
+                    }
+                    line2 << "FPS: " << fps;
+                    break;
+                }
+            }
+            
+            updateLCD(line1.str(), line2.str());
+            
+            // Cycle to next display mode (0 -> 1 -> 2 -> 0)
+            lcd_display_cycle_ = (lcd_display_cycle_ + 1) % 3;
+            last_lcd_update_ = now;
         }
         
         updateRecordingStatus();
@@ -1012,10 +1192,13 @@ void DroneWebController::handleClientRequest(int client_socket) {
         // Parse mode from request body
         size_t mode_pos = request.find("mode=");
         if (mode_pos != std::string::npos) {
-            std::string mode_str = request.substr(mode_pos + 5, 20);
-            if (mode_str.find("svo2_depth_viz") != std::string::npos) {
-                setRecordingMode(RecordingModeType::SVO2_DEPTH_VIZ);
-                response = generateAPIResponse("Recording mode set to SVO2 + Depth Visualization");
+            std::string mode_str = request.substr(mode_pos + 5, 25);
+            if (mode_str.find("svo2_depth_info") != std::string::npos) {
+                setRecordingMode(RecordingModeType::SVO2_DEPTH_INFO);
+                response = generateAPIResponse("Recording mode set to SVO2 + Depth Info (32-bit raw)");
+            } else if (mode_str.find("svo2_depth_images") != std::string::npos) {
+                setRecordingMode(RecordingModeType::SVO2_DEPTH_IMAGES);
+                response = generateAPIResponse("Recording mode set to SVO2 + Depth Images (PNG)");
             } else if (mode_str.find("svo2") != std::string::npos) {
                 setRecordingMode(RecordingModeType::SVO2);
                 response = generateAPIResponse("Recording mode set to SVO2");
@@ -1195,16 +1378,18 @@ std::string DroneWebController::generateMainPage() {
            "currentRecMode=data.recording_mode;"
            "currentDepthMode=data.depth_mode;"
            "document.getElementById('modeRadioSVO2').checked=(currentRecMode==='svo2');"
-           "document.getElementById('modeRadioDepthViz').checked=(currentRecMode==='svo2_depth_viz');"
+           "document.getElementById('modeRadioDepthInfo').checked=(currentRecMode==='svo2_depth_info');"
+           "document.getElementById('modeRadioDepthImages').checked=(currentRecMode==='svo2_depth_images');"
            "document.getElementById('modeRadioRaw').checked=(currentRecMode==='raw');"
            "if(!isInitializing){"
            "document.getElementById('depthModeSelect').value=currentDepthMode.toLowerCase();"
            "}"
            "let showDepth=(currentRecMode!=='svo2');"
-           "let showDepthFps=(currentRecMode==='svo2_depth_viz');"
+           "let showDepthFps=(currentRecMode==='svo2_depth_info'||currentRecMode==='svo2_depth_images');"
            "document.getElementById('depthModeSelect').disabled=isRecording||isInitializing;"
            "document.getElementById('modeRadioSVO2').disabled=isRecording||isInitializing;"
-           "document.getElementById('modeRadioDepthViz').disabled=isRecording||isInitializing;"
+           "document.getElementById('modeRadioDepthInfo').disabled=isRecording||isInitializing;"
+           "document.getElementById('modeRadioDepthImages').disabled=isRecording||isInitializing;"
            "document.getElementById('modeRadioRaw').disabled=isRecording||isInitializing;"
            "document.getElementById('depthFpsSlider').disabled=isRecording||isInitializing;"
            "if(isInitializing){"
@@ -1225,8 +1410,14 @@ std::string DroneWebController::generateMainPage() {
            "document.getElementById('stopBtn').disabled=!isRecording;"
            "document.getElementById('depthModeGroup').style.display=showDepth?'block':'none';"
            "document.getElementById('depthFpsGroup').style.display=showDepthFps?'block':'none';"
-           "if(currentRecMode==='svo2_depth_viz'){"
-           "document.getElementById('modeInfo').textContent='Depth FPS: '+((data.depth_fps||0).toFixed(1));"
+           "if(currentRecMode==='svo2_depth_info'){"
+           "document.getElementById('modeInfo').textContent='SVO2 + Raw 32-bit depth data (fast, for post-processing)';"
+           "}else if(currentRecMode==='svo2_depth_images'){"
+           "document.getElementById('modeInfo').textContent='SVO2 + PNG depth visualization (slower, human-readable)';"
+           "}else if(currentRecMode==='svo2'){"
+           "document.getElementById('modeInfo').textContent='SVO2: Single compressed file at 30 FPS';"
+           "}else if(currentRecMode==='raw'){"
+           "document.getElementById('modeInfo').textContent='RAW: Separate left/right/depth images';"
            "}"
            "if(isRecording){"
            "let elapsed=data.recording_duration_total-data.recording_time_remaining;"
@@ -1242,7 +1433,7 @@ std::string DroneWebController::generateMainPage() {
            "document.getElementById('speed').textContent=speed+' MB/s';"
            "if(currentRecMode==='raw'){"
            "document.getElementById('filename').textContent='Frames: '+data.frame_count+' | FPS: '+data.current_fps.toFixed(1);"
-           "}else if(currentRecMode==='svo2_depth_test'||currentRecMode==='svo2_depth_viz'){"
+           "}else if(currentRecMode==='svo2_depth_test'||currentRecMode==='svo2_depth_images'){"
            "document.getElementById('filename').textContent='Recording | Depth FPS: '+((data.depth_fps||0).toFixed(1));"
            "}else{"
            "document.getElementById('filename').textContent=data.current_file_path.split('/').pop();"
@@ -1309,7 +1500,8 @@ std::string DroneWebController::generateMainPage() {
            "<h3>Recording Mode</h3>"
            "<div class='radio-group'>"
            "<label><input type='radio' id='modeRadioSVO2' name='recMode' value='svo2' checked onclick='setRecordingMode(\"svo2\")'> SVO2 (Standard)</label>"
-           "<label><input type='radio' id='modeRadioDepthViz' name='recMode' value='svo2_depth_viz' onclick='setRecordingMode(\"svo2_depth_viz\")'> SVO2 + Depth Viz</label>"
+           "<label><input type='radio' id='modeRadioDepthInfo' name='recMode' value='svo2_depth_info' onclick='setRecordingMode(\"svo2_depth_info\")'> SVO2 + Depth Info (Fast, 32-bit raw)</label>"
+           "<label><input type='radio' id='modeRadioDepthImages' name='recMode' value='svo2_depth_images' onclick='setRecordingMode(\"svo2_depth_images\")'> SVO2 + Depth Images (PNG)</label>"
            "<label><input type='radio' id='modeRadioRaw' name='recMode' value='raw' onclick='setRecordingMode(\"raw\")'> RAW (Images+Depth)</label>"
            "</div>"
            "<div class='mode-info' id='modeInfo'>SVO2: Single compressed file at 30 FPS</div>"
@@ -1339,8 +1531,8 @@ std::string DroneWebController::generateMainPage() {
            "<select id='cameraResolutionSelect' onchange='setCameraResolution()'>"
            "<option value='hd2k_15'>HD2K (2208×1242) @ 15 FPS</option>"
            "<option value='hd1080_30'>HD1080 (1920×1080) @ 30 FPS</option>"
-           "<option value='hd720_60'>HD720 (1280×720) @ 60 FPS</option>"
-           "<option value='hd720_30' selected>HD720 (1280×720) @ 30 FPS ⭐</option>"
+           "<option value='hd720_60' selected>HD720 (1280×720) @ 60 FPS ⭐</option>"
+           "<option value='hd720_30'>HD720 (1280×720) @ 30 FPS</option>"
            "<option value='hd720_15'>HD720 (1280×720) @ 15 FPS</option>"
            "<option value='vga_100'>VGA (672×376) @ 100 FPS</option>"
            "</select>"
@@ -1376,7 +1568,8 @@ std::string DroneWebController::generateStatusAPI() {
     std::string mode_str;
     switch (status.recording_mode) {
         case RecordingModeType::SVO2: mode_str = "svo2"; break;
-        case RecordingModeType::SVO2_DEPTH_VIZ: mode_str = "svo2_depth_viz"; break;
+        case RecordingModeType::SVO2_DEPTH_INFO: mode_str = "svo2_depth_info"; break;
+        case RecordingModeType::SVO2_DEPTH_IMAGES: mode_str = "svo2_depth_images"; break;
         case RecordingModeType::RAW_FRAMES: mode_str = "raw"; break;
     }
     
@@ -1421,7 +1614,7 @@ void DroneWebController::handleShutdown() {
         
         // Stop appropriate recorder
         if ((recording_mode_ == RecordingModeType::SVO2 || 
-             recording_mode_ == RecordingModeType::SVO2_DEPTH_VIZ) && svo_recorder_) {
+             recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) && svo_recorder_) {
             svo_recorder_->stopRecording();
         } else if (recording_mode_ == RecordingModeType::RAW_FRAMES && raw_recorder_) {
             raw_recorder_->stopRecording();

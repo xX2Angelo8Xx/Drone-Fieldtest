@@ -6,6 +6,7 @@
 #include <chrono>
 #include <vector>
 #include <memory>
+#include <mutex>
 
 class LCDHandler {
 private:
@@ -15,6 +16,7 @@ private:
     std::string current_line1_;
     std::string current_line2_;
     bool is_initialized_;
+    std::mutex lcd_mutex_;  // Thread-safe LCD operations
     
     // Hilfsfunktionen
     std::string truncateToWidth(const std::string& text, int max_width = 16);

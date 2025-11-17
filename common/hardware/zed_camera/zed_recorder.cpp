@@ -154,9 +154,18 @@ bool ZEDRecorder::startRecording(const std::string& video_path, const std::strin
     
     // Production compression: LOSSLESS for maximum quality (Jetson Orin Nano optimized)
     rec_params.compression_mode = sl::SVO_COMPRESSION_MODE::LOSSLESS;
-    rec_params.target_framerate = (current_mode_ == RecordingMode::HD720_30FPS) ? 30 : 15;
     
-    std::cout << "[ZED] Using LOSSLESS compression (optimized for Jetson Orin Nano)" << std::endl;
+    // Set target framerate based on recording mode
+    switch (current_mode_) {
+        case RecordingMode::HD720_60FPS:  rec_params.target_framerate = 60; break;
+        case RecordingMode::HD720_30FPS:  rec_params.target_framerate = 30; break;
+        case RecordingMode::HD720_15FPS:  rec_params.target_framerate = 15; break;
+        case RecordingMode::HD1080_30FPS: rec_params.target_framerate = 30; break;
+        case RecordingMode::HD2K_15FPS:   rec_params.target_framerate = 15; break;
+        case RecordingMode::VGA_100FPS:   rec_params.target_framerate = 100; break;
+    }
+    
+    std::cout << "[ZED] Using LOSSLESS compression with target FPS: " << rec_params.target_framerate << std::endl;
     
     sl::ERROR_CODE err = zed_.enableRecording(rec_params);
     if (err != sl::ERROR_CODE::SUCCESS) {

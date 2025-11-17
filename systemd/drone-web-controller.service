@@ -1,0 +1,35 @@
+[Unit]
+Description=Drone Web Controller Service (with WiFi Hotspot)
+After=network.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=forking
+User=root
+Group=root
+WorkingDirectory=/home/angelo/Projects/Drone-Fieldtest
+
+# Early LCD feedback (runs immediately, exits quickly)
+ExecStartPre=/home/angelo/Projects/Drone-Fieldtest/scripts/early_lcd_feedback.sh
+
+# Wait for NetworkManager to be fully ready
+ExecStartPre=/bin/sleep 10
+
+# Start drone controller with proper wrapper
+ExecStart=/home/angelo/Projects/Drone-Fieldtest/scripts/autostart_service_wrapper.sh
+
+# Cleanup on stop
+ExecStop=/home/angelo/Projects/Drone-Fieldtest/scripts/stop_drone.sh
+
+Restart=no
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

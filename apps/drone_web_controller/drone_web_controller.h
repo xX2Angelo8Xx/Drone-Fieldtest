@@ -6,6 +6,7 @@
 #include <functional>
 #include "zed_recorder.h"
 #include "raw_frame_recorder.h"
+#include "depth_data_writer.h"
 #include "storage.h"
 #include "lcd_handler.h"
 #include "safe_hotspot_manager.h"
@@ -18,9 +19,10 @@ enum class RecorderState {
 };
 
 enum class RecordingModeType {
-    SVO2,           // Traditional SVO2 compressed recording (no depth)
-    SVO2_DEPTH_VIZ, // SVO2 + depth saved as colorized images (configurable FPS)
-    RAW_FRAMES      // Raw left/right images + depth maps
+    SVO2,              // Standard SVO2 compressed recording (no depth computation)
+    SVO2_DEPTH_INFO,   // SVO2 + raw depth data (32-bit float .depth files, fast)
+    SVO2_DEPTH_IMAGES, // SVO2 + depth visualization (PNG images, slower but visual)
+    RAW_FRAMES         // RAW frame recording (separate left/right/depth images)
 };
 
 struct RecordingStatus {
@@ -95,6 +97,7 @@ private:
     // Core components - dual recorder support
     std::unique_ptr<ZEDRecorder> svo_recorder_;
     std::unique_ptr<RawFrameRecorder> raw_recorder_;
+    std::unique_ptr<DepthDataWriter> depth_data_writer_;  // For SVO2_DEPTH_INFO mode
     std::unique_ptr<StorageHandler> storage_;
     std::unique_ptr<LCDHandler> lcd_;
     
@@ -104,6 +107,7 @@ private:
     // Recording mode configuration
     RecordingModeType recording_mode_{RecordingModeType::SVO2};
     DepthMode depth_mode_{DepthMode::NEURAL_LITE};
+    RecordingMode camera_resolution_{RecordingMode::HD720_60FPS};  // Default camera resolution/FPS
     std::atomic<int> depth_recording_fps_{10};  // FPS for depth visualization saving (0 = disabled)
     
     // State management
@@ -121,6 +125,10 @@ private:
     std::chrono::steady_clock::time_point recording_start_time_;
     int recording_duration_seconds_{240}; // 4 minutes default
     std::string current_recording_path_;
+    
+    // LCD recording display state
+    int lcd_display_cycle_{0};  // Alternates between different recording info displays
+    std::chrono::steady_clock::time_point last_lcd_update_;
     
     // Background tasks
     std::unique_ptr<std::thread> recording_monitor_thread_;

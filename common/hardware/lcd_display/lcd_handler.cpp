@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <thread>  // For std::this_thread::sleep_for
 
 LCDHandler::LCDHandler() 
     : lcd_(nullptr), update_interval_ms_(1000), current_line1_(""), current_line2_(""), is_initialized_(false) {
@@ -58,6 +59,9 @@ std::string LCDHandler::formatTime(int seconds) {
 void LCDHandler::displayMessage(const std::string& line1, const std::string& line2) {
     if (!is_initialized_) return;
     
+    // CRITICAL: Thread-safe LCD operations with mutex
+    std::lock_guard<std::mutex> lock(lcd_mutex_);
+    
     std::string l1 = truncateToWidth(line1, 16);
     std::string l2 = truncateToWidth(line2, 16);
     
@@ -66,10 +70,28 @@ void LCDHandler::displayMessage(const std::string& line1, const std::string& lin
         current_line1_ = l1;
         current_line2_ = l2;
         
+        // MAXIMUM stability: Rate limiting 100ms between LCD updates (was 50ms - still too fast)
+        auto now = std::chrono::steady_clock::now();
+        auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update_time_).count();
+        
+        if (time_since_last < 100) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100 - time_since_last));
+        }
+        
+        // Additional settling delay before I2C operation
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        
         // LCD_I2C verwendet printMessage mit \n als Trenner
         std::string full_message = l1 + "\n" + l2;
         lcd_->clear();
+        
+        // Longer delay between clear and print for I2C bus stability
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        
         lcd_->printMessage(full_message);
+        
+        // Extra delay after print to let LCD settle
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
         
         last_update_time_ = std::chrono::steady_clock::now();
     }
