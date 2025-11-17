@@ -67,6 +67,7 @@ public:
     void setCameraExposure(int exposure);  // -1 = auto, 0-100 = manual
     RecordingMode getCameraResolution();   // Removed const
     int getCameraExposure();               // Removed const
+    std::string exposureToShutterSpeed(int exposure, int fps);  // Convert exposure to "1/X" notation
     
     // Status methods
     RecordingStatus getStatus() const;
@@ -123,6 +124,7 @@ private:
     
     // Recording state
     std::chrono::steady_clock::time_point recording_start_time_;
+    std::chrono::steady_clock::time_point recording_stopped_time_;  // Time when recording was stopped
     int recording_duration_seconds_{240}; // 4 minutes default
     std::string current_recording_path_;
     

@@ -43,15 +43,12 @@ bool DroneWebController::initialize() {
             return false;
         }
         
-        // Bootup message 1: System starting
-        lcd_->displayMessage("System Bootup", "Initializing...");
-        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        // Minimal bootup message: Just "Starting..."
+        lcd_->displayMessage("Starting...", "");
         
         // Initialize ZED recorders based on mode
         // For now, initialize the default SVO2 recorder
         // Raw recorder will be initialized on-demand when mode is switched
-        lcd_->displayMessage("Init Code", "Loading camera..");
-        
         svo_recorder_ = std::make_unique<ZEDRecorder>();
         if (!svo_recorder_->init(camera_resolution_)) {  // Use member variable instead of default
             std::cout << "[WEB_CONTROLLER] ZED camera initialization failed" << std::endl;
@@ -61,6 +58,14 @@ bool DroneWebController::initialize() {
         std::cout << "[WEB_CONTROLLER] ZED camera initialized with resolution: " 
                   << svo_recorder_->getModeName(camera_resolution_) << std::endl;
         
+        // Set smart default exposure based on FPS
+        // For 60 FPS: Use 1/120 shutter (50% exposure) for good motion capture
+        if (camera_resolution_ == RecordingMode::HD720_60FPS || 
+            camera_resolution_ == RecordingMode::VGA_100FPS) {
+            svo_recorder_->setCameraExposure(50);  // 1/120 at 60fps, 1/200 at 100fps
+            std::cout << "[WEB_CONTROLLER] Set default exposure: 50% (1/120 shutter @ 60fps)" << std::endl;
+        }
+        
         // Initialize storage
         storage_ = std::make_unique<StorageHandler>();
         if (!storage_->findAndMountUSB("DRONE_DATA")) {
@@ -69,16 +74,12 @@ bool DroneWebController::initialize() {
             return false;
         }
         
-        // Bootup message 2: Starting web server
-        lcd_->displayMessage("Launching", "Web Server...");
-        std::this_thread::sleep_for(std::chrono::milliseconds(800));
-        
         // Start system monitor thread
         system_monitor_thread_ = std::make_unique<std::thread>(&DroneWebController::systemMonitorLoop, this);
         
-        // Final bootup message: Ready with web address
+        // Final bootup message: Ready with web address (keep visible before status display)
         updateLCD("Ready!", "10.42.0.1:8080");
-        std::this_thread::sleep_for(std::chrono::seconds(2));  // Keep visible before status display
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         
         std::cout << "[WEB_CONTROLLER] Initialization complete" << std::endl;
         std::cout << "[WEB_CONTROLLER] Camera: " << svo_recorder_->getModeName(camera_resolution_) << std::endl;
@@ -347,7 +348,6 @@ bool DroneWebController::stopRecording() {
     
     // Signal recording thread to stop first
     recording_active_ = false;
-    current_state_ = RecorderState::IDLE;
     
     // Wait for recording monitor thread to finish (after setting flags)
     if (recording_monitor_thread_ && recording_monitor_thread_->joinable()) {
@@ -355,8 +355,16 @@ bool DroneWebController::stopRecording() {
         recording_monitor_thread_.reset();  // Clean up thread pointer
     }
     
+    // Show "Recording Stopped" message
     updateLCD("Recording", "Stopped");
+    
+    // Set state to IDLE only after a delay (let "Stopped" message stay visible)
+    // Use a timer that systemMonitorLoop can check
+    recording_stopped_time_ = std::chrono::steady_clock::now();
+    
     std::cout << "[WEB_CONTROLLER] Recording stopped" << std::endl;
+    
+    // State will be set to IDLE by systemMonitorLoop after message is visible
     
     return true;
 }
@@ -545,6 +553,9 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
         return;
     }
     
+    // Save current exposure setting before reinit
+    int current_exposure = getCameraExposure();
+    
     // Store new resolution setting
     camera_resolution_ = mode;
     
@@ -606,6 +617,12 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
         status_message_ = "Camera reinitialized successfully";
     }
     
+    // Reapply exposure setting after reinit
+    if (current_exposure != -1) {
+        setCameraExposure(current_exposure);
+        std::cout << "[WEB_CONTROLLER] Reapplied exposure: " << current_exposure << std::endl;
+    }
+    
     updateLCD("Camera Ready", svo_recorder_->getModeName(mode).c_str());
     std::cout << "[WEB_CONTROLLER] Camera resolution changed successfully" << std::endl;
 }
@@ -632,6 +649,21 @@ int DroneWebController::getCameraExposure() {
         return raw_recorder_->getCameraExposure();
     }
     return -1;  // Auto
+}
+
+std::string DroneWebController::exposureToShutterSpeed(int exposure, int fps) {
+    // Convert exposure percentage back to shutter speed notation
+    // Formula: shutter = FPS / (exposure / 100)
+    
+    if (exposure <= 0) {
+        return "Auto";
+    }
+    
+    // Calculate shutter denominator
+    int shutter = static_cast<int>(std::round((fps * 100.0) / exposure));
+    
+    // Return as "1/X" notation
+    return "1/" + std::to_string(shutter);
 }
 
 void DroneWebController::setDepthMode(DepthMode depth_mode) {
@@ -904,6 +936,11 @@ void DroneWebController::recordingMonitorLoop() {
     last_lcd_update_ = std::chrono::steady_clock::now();
     
     while (recording_active_ && !shutdown_requested_) {
+        // If stopping, exit loop cleanly (let "Stopping..." message stay visible)
+        if (current_state_ == RecorderState::STOPPING) {
+            break;  // Exit loop immediately when stopping
+        }
+        
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recording_start_time_).count();
         
@@ -921,23 +958,23 @@ void DroneWebController::recordingMonitorLoop() {
             } else if (recording_mode_ == RecordingModeType::RAW_FRAMES && raw_recorder_) {
                 raw_recorder_->stopRecording();
             }
-            
             current_state_ = RecorderState::IDLE;
             updateLCD("Recording", "Completed");
             break;
         }
         
-        // Update LCD with recording timer - alternating display every 3 seconds
-        // Line 1: Always show "Time n/240s"
-        // Line 2: Alternates between mode and settings (2 pages total, 16 chars max)
+        // Update LCD every 3 seconds
+        // Line 1: Static - shows progress "Rec: n/240s"
+        // Line 2: Rotates every update between mode and settings
         auto lcd_elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_lcd_update_).count();
         if (lcd_elapsed >= 3) {
             std::ostringstream line1, line2;
             
-            // Line 1: Time elapsed/total (max 16 chars)
-            line1 << "Time " << elapsed << "/" << recording_duration_seconds_ << "s";
+            // Line 1: Static progress display (max 16 chars)
+            // Format: "Rec: 45/240s" (fits in 16 chars even at 999/999s)
+            line1 << "Rec: " << elapsed << "/" << recording_duration_seconds_ << "s";
             
-            // Line 2: Alternate between 2 pages (not 3)
+            // Line 2: Alternate between mode and settings every 3 seconds
             if (lcd_display_cycle_ == 0) {
                 // Page 1: Recording mode (max 16 chars)
                 switch (recording_mode_) {
@@ -955,8 +992,8 @@ void DroneWebController::recordingMonitorLoop() {
                         break;
                 }
             } else {
-                // Page 2: Resolution@FPS E:exposure (max 16 chars)
-                // Examples: "720@60 E:50" or "720@60 E:Auto"
+                // Page 2: Resolution@FPS shutter (max 16 chars)
+                // Examples: "720@60 1/120" or "720@60 Auto"
                 int fps;
                 std::string res;
                 switch (camera_resolution_) {
@@ -969,17 +1006,13 @@ void DroneWebController::recordingMonitorLoop() {
                 }
                 
                 int exposure = getCameraExposure();
-                line2 << res << "@" << fps << " E:";
-                if (exposure == -1) {
-                    line2 << "Auto";
-                } else {
-                    line2 << exposure;
-                }
+                std::string shutter = exposureToShutterSpeed(exposure, fps);
+                line2 << res << "@" << fps << " " << shutter;
             }
             
             updateLCD(line1.str(), line2.str());
             
-            // Toggle between page 0 and 1 (not 0-1-2)
+            // Toggle between page 0 and 1 every 3 seconds
             lcd_display_cycle_ = (lcd_display_cycle_ + 1) % 2;
             last_lcd_update_ = now;
         }
@@ -1063,29 +1096,31 @@ void DroneWebController::systemMonitorLoop() {
         }
         
         // Update LCD display with detailed status
+        // Note: During recording, the recordingMonitorLoop handles LCD updates
+        // Only update LCD here when NOT recording
         if (recording_active_) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recording_start_time_).count();
-            int remaining = recording_duration_seconds_ - elapsed;
-            
-            std::ostringstream line1, line2;
-            line1 << "REC " << elapsed << "/" << recording_duration_seconds_ << "s";
-            
-            if (remaining > 0) {
-                line2 << "Remaining: " << remaining << "s";
-            } else {
-                line2 << "Auto-stopping...";
-            }
-            
-            updateLCD(line1.str(), line2.str());
+            // Do nothing - recordingMonitorLoop handles LCD during recording
         } else if (current_state_ == RecorderState::STOPPING) {
             updateLCD("STOPPING", "Recording...");
-        } else if (hotspot_active_ && web_server_running_) {
-            updateLCD("Web Controller", "10.42.0.1:8080");
-        } else if (hotspot_active_) {
-            updateLCD("WiFi Hotspot", "Starting...");
         } else {
-            updateLCD("Drone Control", "Initializing...");
+            // Check if we just stopped recording (keep "Recording Stopped" visible for 3 seconds)
+            auto now = std::chrono::steady_clock::now();
+            auto time_since_stop = std::chrono::duration_cast<std::chrono::seconds>(
+                now - recording_stopped_time_).count();
+            
+            if (time_since_stop < 3 && time_since_stop >= 0) {
+                // Keep "Recording Stopped" message visible
+                // Don't update LCD
+                if (current_state_ != RecorderState::IDLE) {
+                    current_state_ = RecorderState::IDLE;  // Transition to IDLE after first check
+                }
+            } else if (hotspot_active_ && web_server_running_) {
+                updateLCD("Web Controller", "10.42.0.1:8080");
+            } else if (hotspot_active_) {
+                updateLCD("WiFi Hotspot", "Starting...");
+            } else {
+                updateLCD("Drone Control", "Initializing...");
+            }
         }
         
         std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -1373,6 +1408,20 @@ std::string DroneWebController::generateMainPage() {
            "h1{color:#495057;margin-bottom:25px}</style>"
            "<script>"
            "let currentRecMode='svo2',currentDepthMode='NEURAL_LITE';"
+           "const shutterSpeeds=["
+           "{s:0,e:-1,label:'Auto'},"
+           "{s:60,e:100,label:'1/60'},"
+           "{s:90,e:67,label:'1/90'},"
+           "{s:120,e:50,label:'1/120'},"
+           "{s:150,e:40,label:'1/150'},"
+           "{s:180,e:33,label:'1/180'},"
+           "{s:240,e:25,label:'1/240'},"
+           "{s:360,e:17,label:'1/360'},"
+           "{s:480,e:13,label:'1/480'},"
+           "{s:720,e:8,label:'1/720'},"
+           "{s:960,e:6,label:'1/960'},"
+           "{s:1200,e:5,label:'1/1200'}"
+           "];"
            "function updateStatus(){"
            "fetch('/api/status').then(r=>r.json()).then(data=>{"
            "let stateText=data.state===0?'IDLE':data.state===1?'RECORDING':'STOPPING';"
@@ -1381,6 +1430,21 @@ std::string DroneWebController::generateMainPage() {
            "let isInitializing=data.camera_initializing;"
            "currentRecMode=data.recording_mode;"
            "currentDepthMode=data.depth_mode;"
+           "if(data.camera_exposure!==undefined){"
+           "let exposure=data.camera_exposure;"
+           "let shutterIndex=0;"
+           "if(exposure===-1){shutterIndex=0;}"
+           "else{"
+           "let minDiff=999;"
+           "for(let i=1;i<shutterSpeeds.length;i++){"
+           "let diff=Math.abs(shutterSpeeds[i].e-exposure);"
+           "if(diff<minDiff){minDiff=diff;shutterIndex=i;}"
+           "}"
+           "}"
+           "document.getElementById('exposureSlider').value=shutterIndex;"
+           "document.getElementById('exposureValue').textContent=shutterSpeeds[shutterIndex].label;"
+           "document.getElementById('exposureActual').textContent='(E:'+exposure+')';"
+           "}"
            "document.getElementById('modeRadioSVO2').checked=(currentRecMode==='svo2');"
            "document.getElementById('modeRadioDepthInfo').checked=(currentRecMode==='svo2_depth_info');"
            "document.getElementById('modeRadioDepthImages').checked=(currentRecMode==='svo2_depth_images');"
@@ -1481,9 +1545,23 @@ std::string DroneWebController::generateMainPage() {
            "setTimeout(updateStatus,2000);"
            "});"
            "}"
-           "function setCameraExposure(exposure){"
-           "document.getElementById('exposureValue').textContent=exposure=='-1'?'Auto':exposure;"
-           "fetch('/api/set_camera_exposure',{method:'POST',body:'exposure='+exposure}).then(r=>r.json()).then(data=>{"
+           "function setCameraExposure(shutterIndex){"
+           "const shutterSpeeds=[{s:0,e:-1,label:'Auto'},"  // Auto mode
+           "{s:60,e:100,label:'1/60'},"     // 100% at 60fps
+           "{s:90,e:67,label:'1/90'},"      // 67% at 60fps
+           "{s:120,e:50,label:'1/120'},"    // 50% at 60fps (default for 60fps)
+           "{s:150,e:40,label:'1/150'},"    // 40% at 60fps
+           "{s:180,e:33,label:'1/180'},"    // 33% at 60fps
+           "{s:240,e:25,label:'1/240'},"    // 25% at 60fps
+           "{s:360,e:17,label:'1/360'},"    // 17% at 60fps
+           "{s:480,e:13,label:'1/480'},"    // 13% at 60fps
+           "{s:720,e:8,label:'1/720'},"     // 8% at 60fps
+           "{s:960,e:6,label:'1/960'},"     // 6% at 60fps
+           "{s:1200,e:5,label:'1/1200'}];"  // 5% at 60fps (minimum)
+           "let selected=shutterSpeeds[shutterIndex];"
+           "document.getElementById('exposureValue').textContent=selected.label;"
+           "document.getElementById('exposureActual').textContent='(E:'+selected.e+')';"
+           "fetch('/api/set_camera_exposure',{method:'POST',body:'exposure='+selected.e}).then(r=>r.json()).then(data=>{"
            "console.log(data.message);"
            "});"
            "}"
@@ -1543,9 +1621,9 @@ std::string DroneWebController::generateMainPage() {
            "<div class='mode-info'>⚠️ Changing resolution/FPS reinitializes the camera</div>"
            "</div>"
            "<div class='select-group'>"
-           "<label>Exposure: <span id='exposureValue'>Auto</span></label>"
-           "<input type='range' id='exposureSlider' min='-1' max='100' value='-1' oninput='setCameraExposure(this.value)'>"
-           "<div class='mode-info'>-1 = Auto, 0-100 = Manual (lower = darker, higher = brighter)</div>"
+           "<label>Shutter Speed: <span id='exposureValue'>1/120</span> <span id='exposureActual' style='font-size:11px;color:#888;font-weight:normal'>(E:50)</span></label>"
+           "<input type='range' id='exposureSlider' min='0' max='11' value='3' step='1' oninput='setCameraExposure(this.value)'>"
+           "<div class='mode-info'>Shutter speeds: Auto, 1/60, 1/90, 1/120 ⭐, 1/150, 1/180, 1/240, 1/360, 1/480, 1/720, 1/960, 1/1200</div>"
            "</div>"
            "</div>"
            "<div id='progress' style='display:none'>"
