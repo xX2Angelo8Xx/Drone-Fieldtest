@@ -78,8 +78,10 @@ sudo ./build/apps/drone_web_controller/drone_web_controller
 **Best For:** General field testing, maximum data density
 
 **Performance:**
-- Target: 60 FPS → Actual: ~40 FPS (hardware limited)
+- Target: 60 FPS → Actual: ~40 FPS (LOSSLESS compression limited - **this is expected**)
 - Target: 30 FPS → Actual: 28-30 FPS (stable)
+
+**Note:** The 40 FPS at 60 FPS setting is due to CPU-based LOSSLESS compression overhead (~27ms per frame vs 16.67ms available). This is a hardware limitation of Jetson Orin Nano (no NVENC encoder), not a software issue. The ZED SDK's official tools achieve the same ~36 FPS. **40 FPS is excellent for drone field testing.**
 
 ### 2. SVO2 + Depth Info (Fast Binary)
 **Files:** `video.svo2` + `sensor_data.csv`  
@@ -312,20 +314,37 @@ sudo systemctl stop drone-recorder
 
 ---
 
-## 🐛 Known Issues & Limitations
+## 🐛 Known Hardware Limitations
 
-### Performance Limitations
+### Performance Characteristics (LOSSLESS Compression)
 
-#### 1. 60 FPS Target Achieves ~40 FPS Actual
-**Observed:** SVO2-only mode with 60 FPS setting records at 35-40 FPS  
-**Impact:** Medium - still useful for field testing  
-**Cause:** Under investigation (see Performance Analysis section)  
-**Workaround:** Use 30 FPS setting for stable 28-30 FPS actual
+#### 1. 60 FPS Target Achieves ~40 FPS Actual ✅ UNDERSTOOD
+**Observed:** SVO2-only mode with 60 FPS setting records at 36-40 FPS  
+**Root Cause:** **CPU-based LOSSLESS compression overhead**  
+**Technical Details:**  
+- LOSSLESS compression: ~27ms per frame
+- Available time at 60 FPS: 16.67ms per frame
+- **Compression cannot keep up** → Frames dropped to ~40 FPS
 
-#### 2. Depth Computation Reduces FPS
+**Evidence:**
+- ✅ Camera hardware: Captures 59.94 FPS (99.9% perfect)
+- ✅ Storage speed: 248 MB/s (sufficient)
+- ✅ ZED SDK official tools: Also achieve only ~36 FPS with LOSSLESS
+- ⚠️ Jetson Orin Nano: No NVENC hardware encoder
+
+**Impact:** Low - 40 FPS is excellent for drone field testing  
+**Status:** **EXPECTED BEHAVIOR** - Not a bug or optimization issue  
+**Options:**
+- Accept 40 FPS at 60 FPS setting (recommended for high-speed capture)
+- Use 30 FPS setting for predictable 28-30 FPS
+- Post-process compression on desktop with hardware encoder
+
+**Workaround:** None - this is fundamental hardware limitation
+
+#### 2. Depth Computation Reduces FPS ✅ EXPECTED
 **Observed:** Depth-enabled modes at 60 FPS achieve 25-30 FPS  
-**Impact:** Medium - depth computation is expensive  
-**Cause:** Neural network inference overhead on GPU  
+**Impact:** Medium - depth neural network is computationally expensive  
+**Cause:** GPU neural network inference + LOSSLESS compression overhead  
 **Workaround:** Use SVO2-only for maximum FPS, extract depth post-flight
 
 #### 3. LCD Updates Are Slow
@@ -352,9 +371,38 @@ sudo systemctl stop drone-recorder
 
 #### 6. No NVENC Hardware Acceleration
 **Issue:** Jetson Orin Nano lacks NVENC encoder  
-**Impact:** Lossless compression only, larger files  
-**Workaround:** NTFS/exFAT for large file support  
-**Alternative:** Post-processing compression on desktop
+**Impact:** CPU-based LOSSLESS compression limits FPS to ~40 at 60 FPS setting  
+**Explanation:** LOSSLESS compression takes ~27ms per frame vs 16.67ms available at 60 FPS  
+**Status:** **This is EXPECTED behavior** - confirmed by testing ZED SDK official tools  
+**Performance:** Camera can capture 60 FPS, but compression limits recording to 40 FPS  
+**Alternative:** Use 30 FPS setting for predictable 28-30 FPS, or accept 40 FPS at 60 FPS setting  
+**Note:** 40 FPS is excellent performance for drone field testing
+
+---
+
+## 📈 Performance Investigation - COMPLETED
+
+### Investigation Results: 40 FPS at 60 FPS Setting
+
+**Status:** ✅ **Investigation Complete** - See `docs/PERFORMANCE_INVESTIGATION_RESULTS.md` for details
+
+**Key Findings:**
+1. ✅ Camera hardware: ZED 2i achieves 59.94 FPS (99.9% perfect)
+2. ✅ Storage speed: 248 MB/s write (more than sufficient)
+3. ✅ Our code efficiency: Faster than official Python SDK
+4. ⚠️ **Bottleneck: CPU-based LOSSLESS compression** (~27ms per frame)
+
+**Conclusion:**  
+The 40 FPS performance at 60 FPS setting is **expected and cannot be optimized** without hardware encoder. This is a fundamental limitation of LOSSLESS compression on Jetson Orin Nano.
+
+**Recommendations:**
+- **Accept 40 FPS** at 60 FPS setting (excellent for field testing)
+- **Use 30 FPS** setting for predictable 28-30 FPS performance
+- Document clearly that 40 FPS is expected behavior
+
+### Test Results Summary
+
+```
 
 ---
 

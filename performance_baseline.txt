@@ -1,0 +1,49 @@
+# Performance Analysis Baseline - November 17, 2025
+
+## System Configuration
+- Platform: NVIDIA Jetson Orin Nano Developer Kit
+- Power Mode: MAXN_SUPER
+- Clock Mode: jetson_clocks enabled (all clocks locked to max)
+- CPU: 6 cores @ 1.73 GHz max
+- GPU: 1020 MHz max
+- Memory: 2133 MHz
+
+## Storage Performance
+- Device: /dev/sda1 (USB 3.0)
+- Filesystem: fuseblk (NTFS)
+- Read Speed: 253.48 MB/s
+- Write Speed: 248 MB/s
+- **Conclusion: Storage is NOT the bottleneck**
+
+## Theoretical Bandwidth Requirements
+
+### HD720 @ 60 FPS (1280×720)
+- Resolution: 1280 × 720 = 921,600 pixels
+- Stereo cameras: 2 × 921,600 = 1,843,200 pixels per frame
+- Bits per pixel: 16 (YUV422) or 24 (RGB)
+- Frame rate: 60 FPS
+
+**Uncompressed bandwidth (worst case):**
+- 1,843,200 pixels × 3 bytes × 60 FPS = 332 MB/s
+
+**With lossless compression (~40% ratio typical for ZED):**
+- 332 MB/s × 0.4 = ~133 MB/s
+
+**Storage capacity: 248 MB/s available**
+**Required: 133 MB/s**
+**Headroom: 115 MB/s (87% overhead)**
+
+**STORAGE IS NOT THE BOTTLENECK**
+
+## Next Tests Required
+1. ✅ Storage speed - PASSED (248 MB/s write, 133 MB/s required)
+2. ⏳ Camera grab() timing - measure actual ZED SDK frame capture time
+3. ⏳ GPU utilization - monitor during recording
+4. ⏳ CPU bottleneck - check if any core at 100%
+5. ⏳ ZED SDK overhead - compare to official ZED tools
+
+## Hypothesis Ranking (After Storage Test)
+1. **ZED SDK grab() latency** - Most likely bottleneck
+2. **GPU memory bandwidth** - Frame transfer from GPU to CPU
+3. **Compression CPU overhead** - Lossless encoding expensive
+4. **Camera hardware limits** - ZED 2i may not sustain 60 FPS at HD720
