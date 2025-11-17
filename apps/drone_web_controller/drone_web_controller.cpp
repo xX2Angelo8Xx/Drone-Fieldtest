@@ -43,13 +43,15 @@ bool DroneWebController::initialize() {
             return false;
         }
         
-        // Show single consolidated init message (avoid LCD spam)
-        lcd_->displayMessage("System Init", "Please wait...");
-        std::this_thread::sleep_for(std::chrono::seconds(1));  // Let message be readable
+        // Bootup message 1: System starting
+        lcd_->displayMessage("System Bootup", "Initializing...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
         
         // Initialize ZED recorders based on mode
         // For now, initialize the default SVO2 recorder
         // Raw recorder will be initialized on-demand when mode is switched
+        lcd_->displayMessage("Init Code", "Loading camera..");
+        
         svo_recorder_ = std::make_unique<ZEDRecorder>();
         if (!svo_recorder_->init(camera_resolution_)) {  // Use member variable instead of default
             std::cout << "[WEB_CONTROLLER] ZED camera initialization failed" << std::endl;
@@ -67,12 +69,16 @@ bool DroneWebController::initialize() {
             return false;
         }
         
-        // Show success message and hold it for visibility
-        updateLCD("System Ready", "Connect to WiFi");
-        std::this_thread::sleep_for(std::chrono::seconds(2));  // Keep message visible
+        // Bootup message 2: Starting web server
+        lcd_->displayMessage("Launching", "Web Server...");
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
         
         // Start system monitor thread
         system_monitor_thread_ = std::make_unique<std::thread>(&DroneWebController::systemMonitorLoop, this);
+        
+        // Final bootup message: Ready with web address
+        updateLCD("Ready!", "10.42.0.1:8080");
+        std::this_thread::sleep_for(std::chrono::seconds(2));  // Keep visible before status display
         
         std::cout << "[WEB_CONTROLLER] Initialization complete" << std::endl;
         std::cout << "[WEB_CONTROLLER] Camera: " << svo_recorder_->getModeName(camera_resolution_) << std::endl;
@@ -922,61 +928,59 @@ void DroneWebController::recordingMonitorLoop() {
         }
         
         // Update LCD with recording timer - alternating display every 3 seconds
+        // Line 1: Always show "Time n/240s"
+        // Line 2: Alternates between mode and settings (2 pages total, 16 chars max)
         auto lcd_elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_lcd_update_).count();
         if (lcd_elapsed >= 3) {
             std::ostringstream line1, line2;
             
-            // Line 1: Always show time n/240s
+            // Line 1: Time elapsed/total (max 16 chars)
             line1 << "Time " << elapsed << "/" << recording_duration_seconds_ << "s";
             
-            // Line 2: Alternate between mode, resolution, and FPS
-            switch (lcd_display_cycle_) {
-                case 0: {
-                    // Show recording mode
-                    std::string mode_name;
-                    switch (recording_mode_) {
-                        case RecordingModeType::SVO2: mode_name = "SVO2"; break;
-                        case RecordingModeType::SVO2_DEPTH_INFO: mode_name = "SVO2+DepthInfo"; break;
-                        case RecordingModeType::SVO2_DEPTH_IMAGES: mode_name = "SVO2+DepthImg"; break;
-                        case RecordingModeType::RAW_FRAMES: mode_name = "RAW"; break;
-                    }
-                    line2 << "Mode: " << mode_name;
-                    break;
+            // Line 2: Alternate between 2 pages (not 3)
+            if (lcd_display_cycle_ == 0) {
+                // Page 1: Recording mode (max 16 chars)
+                switch (recording_mode_) {
+                    case RecordingModeType::SVO2: 
+                        line2 << "SVO2"; 
+                        break;
+                    case RecordingModeType::SVO2_DEPTH_INFO: 
+                        line2 << "SVO2+RawDepth"; 
+                        break;
+                    case RecordingModeType::SVO2_DEPTH_IMAGES: 
+                        line2 << "SVO2+DepthPNG"; 
+                        break;
+                    case RecordingModeType::RAW_FRAMES: 
+                        line2 << "RAW"; 
+                        break;
                 }
-                case 1: {
-                    // Show resolution
-                    std::string res_name;
-                    switch (camera_resolution_) {
-                        case RecordingMode::HD2K_15FPS: res_name = "HD2K 1242p"; break;
-                        case RecordingMode::HD1080_30FPS: res_name = "HD1080 1080p"; break;
-                        case RecordingMode::HD720_60FPS: res_name = "HD720 720p"; break;
-                        case RecordingMode::HD720_30FPS: res_name = "HD720 720p"; break;
-                        case RecordingMode::HD720_15FPS: res_name = "HD720 720p"; break;
-                        case RecordingMode::VGA_100FPS: res_name = "VGA 376p"; break;
-                    }
-                    line2 << res_name;
-                    break;
+            } else {
+                // Page 2: Resolution@FPS E:exposure (max 16 chars)
+                // Examples: "720@60 E:50" or "720@60 E:Auto"
+                int fps;
+                std::string res;
+                switch (camera_resolution_) {
+                    case RecordingMode::HD2K_15FPS: res = "2K"; fps = 15; break;
+                    case RecordingMode::HD1080_30FPS: res = "1080"; fps = 30; break;
+                    case RecordingMode::HD720_60FPS: res = "720"; fps = 60; break;
+                    case RecordingMode::HD720_30FPS: res = "720"; fps = 30; break;
+                    case RecordingMode::HD720_15FPS: res = "720"; fps = 15; break;
+                    case RecordingMode::VGA_100FPS: res = "VGA"; fps = 100; break;
                 }
-                case 2: {
-                    // Show FPS
-                    int fps;
-                    switch (camera_resolution_) {
-                        case RecordingMode::HD2K_15FPS: fps = 15; break;
-                        case RecordingMode::HD1080_30FPS: fps = 30; break;
-                        case RecordingMode::HD720_60FPS: fps = 60; break;
-                        case RecordingMode::HD720_30FPS: fps = 30; break;
-                        case RecordingMode::HD720_15FPS: fps = 15; break;
-                        case RecordingMode::VGA_100FPS: fps = 100; break;
-                    }
-                    line2 << "FPS: " << fps;
-                    break;
+                
+                int exposure = getCameraExposure();
+                line2 << res << "@" << fps << " E:";
+                if (exposure == -1) {
+                    line2 << "Auto";
+                } else {
+                    line2 << exposure;
                 }
             }
             
             updateLCD(line1.str(), line2.str());
             
-            // Cycle to next display mode (0 -> 1 -> 2 -> 0)
-            lcd_display_cycle_ = (lcd_display_cycle_ + 1) % 3;
+            // Toggle between page 0 and 1 (not 0-1-2)
+            lcd_display_cycle_ = (lcd_display_cycle_ + 1) % 2;
             last_lcd_update_ = now;
         }
         
