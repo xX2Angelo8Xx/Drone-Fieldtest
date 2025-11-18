@@ -235,7 +235,17 @@ void RawFrameRecorder::recordingLoop() {
         // Grab new frame
         sl::ERROR_CODE grab_result = zed_.grab(runtime_params);
         
-        if (grab_result == sl::ERROR_CODE::SUCCESS) {
+        // CRITICAL: Treat CORRUPTED_FRAME as warning, not fatal error
+        // Common with fast shutter speeds, dark scenes, or covered lens (e.g., landing in grass)
+        // ZED Explorer continues recording in this case - we should too
+        bool frame_corrupted = (grab_result == sl::ERROR_CODE::CORRUPTED_FRAME);
+        
+        if (grab_result == sl::ERROR_CODE::SUCCESS || frame_corrupted) {
+            // Log warning for corrupted frames (but continue recording)
+            if (frame_corrupted) {
+                std::cout << "[RAW_RECORDER] Warning: Frame may be corrupted (dark image or covered lens), continuing recording..." << std::endl;
+            }
+            
             long current_frame = frame_count_.load();
             
             // Retrieve left image
