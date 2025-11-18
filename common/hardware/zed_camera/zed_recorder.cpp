@@ -1173,3 +1173,50 @@ bool ZEDRecorder::isExposureAuto() {
     zed_.getCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, exposure);
     return (exposure < 0 || exposure > 100);
 }
+
+bool ZEDRecorder::setCameraGain(int gain_value) {
+    if (!zed_.isOpened()) {
+        std::cerr << "[ZED] Camera not initialized - cannot set gain" << std::endl;
+        return false;
+    }
+    
+    if (gain_value == -1) {
+        // Enable auto gain
+        sl::ERROR_CODE err = zed_.setCameraSettings(sl::VIDEO_SETTINGS::GAIN, -1);
+        if (err == sl::ERROR_CODE::SUCCESS) {
+            std::cout << "[ZED] Auto gain enabled" << std::endl;
+            return true;
+        }
+    } else if (gain_value >= 0 && gain_value <= 100) {
+        // Set manual gain (0-100)
+        sl::ERROR_CODE err = zed_.setCameraSettings(sl::VIDEO_SETTINGS::GAIN, gain_value);
+        if (err == sl::ERROR_CODE::SUCCESS) {
+            std::cout << "[ZED] Manual gain set to: " << gain_value << std::endl;
+            return true;
+        }
+    }
+    
+    std::cerr << "[ZED] Failed to set gain (must be -1 for auto or 0-100 for manual)" << std::endl;
+    return false;
+}
+
+int ZEDRecorder::getCameraGain() {
+    if (!zed_.isOpened()) {
+        return -1;
+    }
+    
+    int value = 0;
+    zed_.getCameraSettings(sl::VIDEO_SETTINGS::GAIN, value);
+    return value;
+}
+
+bool ZEDRecorder::isGainAuto() {
+    if (!zed_.isOpened()) {
+        return true;  // Default to auto if camera not open
+    }
+    
+    // In ZED SDK, gain value of -1 or very high value indicates auto mode
+    int gain = 0;
+    zed_.getCameraSettings(sl::VIDEO_SETTINGS::GAIN, gain);
+    return (gain < 0 || gain > 100);
+}

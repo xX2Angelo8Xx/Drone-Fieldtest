@@ -63,7 +63,12 @@ public:
     // Camera settings
     bool setCameraExposure(int exposure_value);  // -1 = auto, 0-100 = manual
     int getCameraExposure();  // Removed const
+    bool setCameraGain(int gain_value);  // -1 = auto, 0-100 = manual
+    int getCameraGain();
     RecordingMode getCurrentMode() const { return current_mode_; }
+    
+    // Get camera reference (for snapshot/livestream)
+    sl::Camera* getCamera() { return &zed_; }
     
 private:
     sl::Camera zed_;

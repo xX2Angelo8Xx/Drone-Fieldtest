@@ -65,8 +65,10 @@ public:
     // Camera settings
     void setCameraResolution(RecordingMode mode);
     void setCameraExposure(int exposure);  // -1 = auto, 0-100 = manual
+    void setCameraGain(int gain);          // -1 = auto, 0-100 = manual
     RecordingMode getCameraResolution();   // Removed const
     int getCameraExposure();               // Removed const
+    int getCameraGain();                   // Get current gain value
     std::string exposureToShutterSpeed(int exposure, int fps);  // Convert exposure to "1/X" notation
     
     // Status methods
@@ -107,13 +109,14 @@ private:
     
     // Recording mode configuration
     RecordingModeType recording_mode_{RecordingModeType::SVO2};
-    DepthMode depth_mode_{DepthMode::NEURAL_LITE};
+    DepthMode depth_mode_{DepthMode::NEURAL_PLUS};  // Default to best quality depth (auto-switched to NONE for SVO2 only)
     RecordingMode camera_resolution_{RecordingMode::HD720_60FPS};  // Default camera resolution/FPS
     std::atomic<int> depth_recording_fps_{10};  // FPS for depth visualization saving (0 = disabled)
     
     // State management
     std::atomic<RecorderState> current_state_{RecorderState::IDLE};
     std::atomic<bool> recording_active_{false};
+    std::atomic<bool> timer_expired_{false};  // Flag: recording timer reached duration
     std::atomic<bool> hotspot_active_{false};
     std::atomic<bool> web_server_running_{false};
     std::atomic<bool> camera_initializing_{false};
@@ -159,6 +162,7 @@ private:
     // Web server helper methods
     std::string generateMainPage();
     std::string generateStatusAPI();
+    std::string generateSnapshotJPEG();  // JPEG snapshot from ZED camera
     std::string generateAPIResponse(const std::string& message);
     
     // Signal handlers

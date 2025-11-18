@@ -521,3 +521,36 @@ int RawFrameRecorder::getCameraExposure() {
     zed_.getCameraSettings(sl::VIDEO_SETTINGS::EXPOSURE, value);
     return value;
 }
+
+bool RawFrameRecorder::setCameraGain(int gain_value) {
+    if (!zed_.isOpened()) {
+        std::cerr << "[RAW] Camera not initialized - cannot set gain" << std::endl;
+        return false;
+    }
+    
+    if (gain_value == -1) {
+        sl::ERROR_CODE err = zed_.setCameraSettings(sl::VIDEO_SETTINGS::GAIN, -1);
+        if (err == sl::ERROR_CODE::SUCCESS) {
+            std::cout << "[RAW] Auto gain enabled" << std::endl;
+            return true;
+        }
+    } else if (gain_value >= 0 && gain_value <= 100) {
+        sl::ERROR_CODE err = zed_.setCameraSettings(sl::VIDEO_SETTINGS::GAIN, gain_value);
+        if (err == sl::ERROR_CODE::SUCCESS) {
+            std::cout << "[RAW] Manual gain set to: " << gain_value << std::endl;
+            return true;
+        }
+    }
+    
+    std::cerr << "[RAW] Failed to set gain" << std::endl;
+    return false;
+}
+
+int RawFrameRecorder::getCameraGain() {
+    if (!zed_.isOpened()) {
+        return -1;
+    }
+    int value = 0;
+    zed_.getCameraSettings(sl::VIDEO_SETTINGS::GAIN, value);
+    return value;
+}

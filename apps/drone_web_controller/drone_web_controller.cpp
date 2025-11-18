@@ -46,6 +46,11 @@ bool DroneWebController::initialize() {
         // Minimal bootup message: Just "Starting..."
         lcd_->displayMessage("Starting...", "");
         
+        // CRITICAL: Set depth mode to NONE for SVO2 only startup (save Jetson resources)
+        // Will auto-switch to NEURAL_PLUS when user selects depth recording modes
+        depth_mode_ = DepthMode::NONE;
+        std::cout << "[WEB_CONTROLLER] Default recording mode: SVO2 only (depth: NONE, compute later on PC)" << std::endl;
+        
         // Initialize ZED recorders based on mode
         // For now, initialize the default SVO2 recorder
         // Raw recorder will be initialized on-demand when mode is switched
@@ -480,6 +485,22 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
     }
     std::cout << std::endl;
     
+    // CRITICAL: Automatically set depth mode based on recording mode
+    // This prevents "depth map not computed" errors and saves resources
+    if (mode == RecordingModeType::SVO2) {
+        // SVO2 only: No depth needed (compute later on PC to save Jetson resources)
+        if (depth_mode_ != DepthMode::NONE) {
+            std::cout << "[WEB_CONTROLLER] Auto-switching depth mode to NONE (SVO2 only)" << std::endl;
+            depth_mode_ = DepthMode::NONE;
+        }
+    } else if (mode == RecordingModeType::SVO2_DEPTH_INFO || mode == RecordingModeType::SVO2_DEPTH_IMAGES || mode == RecordingModeType::RAW_FRAMES) {
+        // Depth recording modes: Use best quality depth (NEURAL_PLUS) if currently NONE
+        if (depth_mode_ == DepthMode::NONE) {
+            std::cout << "[WEB_CONTROLLER] Auto-switching depth mode to NEURAL_PLUS (best quality)" << std::endl;
+            depth_mode_ = DepthMode::NEURAL_PLUS;
+        }
+    }
+    
     // Show consolidated message on LCD (avoid spam)
     updateLCD("Mode Change", "Reinitializing...");
     
@@ -497,6 +518,15 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
         std::cout << "[WEB_CONTROLLER] Switching from RAW to SVO mode - reinitializing..." << std::endl;
         raw_recorder_->close();
         raw_recorder_.reset();
+        needs_reinit = true;
+    }
+    // If switching TO SVO2 only from depth modes (need to disable depth)
+    else if (mode == RecordingModeType::SVO2 && (old_mode == RecordingModeType::SVO2_DEPTH_INFO || old_mode == RecordingModeType::SVO2_DEPTH_IMAGES)) {
+        std::cout << "[WEB_CONTROLLER] Switching from SVO2+Depth to SVO2 only - reinitializing without depth..." << std::endl;
+        if (svo_recorder_) {
+            svo_recorder_->close();
+            svo_recorder_.reset();
+        }
         needs_reinit = true;
     }
     // If switching between SVO depth modes
@@ -525,10 +555,16 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
         } else {
             svo_recorder_ = std::make_unique<ZEDRecorder>();
             
-            // Enable depth computation if needed
+            // Enable depth computation ONLY if depth recording is needed
+            // For SVO2 only: depth_mode_ should be NONE (set automatically above)
             if (mode == RecordingModeType::SVO2_DEPTH_INFO || mode == RecordingModeType::SVO2_DEPTH_IMAGES) {
                 sl::DEPTH_MODE zed_depth_mode = convertDepthMode(depth_mode_);
                 svo_recorder_->enableDepthComputation(true, zed_depth_mode);
+                std::cout << "[WEB_CONTROLLER] Depth computation ENABLED with mode: " 
+                          << getDepthModeName(depth_mode_) << std::endl;
+            } else {
+                // SVO2 only: Explicitly disable depth (save Jetson resources)
+                std::cout << "[WEB_CONTROLLER] Depth computation DISABLED (SVO2 only, compute later on PC)" << std::endl;
             }
             
             if (!svo_recorder_->init(camera_resolution_)) {
@@ -647,6 +683,25 @@ int DroneWebController::getCameraExposure() {
         return svo_recorder_->getCameraExposure();
     } else if (raw_recorder_) {
         return raw_recorder_->getCameraExposure();
+    }
+    return -1;  // Auto
+}
+
+void DroneWebController::setCameraGain(int gain) {
+    if (svo_recorder_ && svo_recorder_->setCameraGain(gain)) {
+        std::cout << "[WEB_CONTROLLER] Gain set to: " << gain << std::endl;
+    } else if (raw_recorder_ && raw_recorder_->setCameraGain(gain)) {
+        std::cout << "[WEB_CONTROLLER] Gain set to: " << gain << std::endl;
+    } else {
+        std::cerr << "[WEB_CONTROLLER] Failed to set gain" << std::endl;
+    }
+}
+
+int DroneWebController::getCameraGain() {
+    if (svo_recorder_) {
+        return svo_recorder_->getCameraGain();
+    } else if (raw_recorder_) {
+        return raw_recorder_->getCameraGain();
     }
     return -1;  // Auto
 }
@@ -946,20 +1001,12 @@ void DroneWebController::recordingMonitorLoop() {
         
         // Check if recording duration reached
         if (elapsed >= recording_duration_seconds_) {
-            std::cout << std::endl << "[WEB_CONTROLLER] Recording duration reached, stopping..." << std::endl;
+            std::cout << std::endl << "[WEB_CONTROLLER] Recording duration reached, setting timer_expired flag..." << std::endl;
             
-            // Signal recording to stop without calling stopRecording() (avoids deadlock)
-            recording_active_ = false;
-            current_state_ = RecorderState::STOPPING;
+            // Set flag to trigger stopRecording() from main thread (prevents deadlock)
+            timer_expired_ = true;
             
-            // Stop appropriate recorder
-            if (recording_mode_ == RecordingModeType::SVO2 && svo_recorder_) {
-                svo_recorder_->stopRecording();
-            } else if (recording_mode_ == RecordingModeType::RAW_FRAMES && raw_recorder_) {
-                raw_recorder_->stopRecording();
-            }
-            current_state_ = RecorderState::IDLE;
-            updateLCD("Recording", "Completed");
+            // Exit loop - main thread will call stopRecording() when it sees timer_expired_
             break;
         }
         
@@ -1055,6 +1102,13 @@ void DroneWebController::webServerLoop(int port) {
     std::cout << "[WEB_CONTROLLER] Web server listening on port " << port << std::endl;
     
     while (web_server_running_) {
+        // Check if recording timer expired (must be checked in main thread to avoid deadlock)
+        if (timer_expired_ && recording_active_) {
+            std::cout << "[WEB_CONTROLLER] Timer expired detected, calling robust stopRecording()..." << std::endl;
+            timer_expired_ = false;  // Reset flag
+            stopRecording();  // Use robust stop routine with all cleanup
+        }
+        
         fd_set read_fds;
         struct timeval timeout;
         FD_ZERO(&read_fds);
@@ -1100,20 +1154,21 @@ void DroneWebController::systemMonitorLoop() {
         // Only update LCD here when NOT recording
         if (recording_active_) {
             // Do nothing - recordingMonitorLoop handles LCD during recording
-        } else if (current_state_ == RecorderState::STOPPING) {
-            updateLCD("STOPPING", "Recording...");
         } else {
             // Check if we just stopped recording (keep "Recording Stopped" visible for 3 seconds)
             auto now = std::chrono::steady_clock::now();
             auto time_since_stop = std::chrono::duration_cast<std::chrono::seconds>(
                 now - recording_stopped_time_).count();
             
+            // Transition to IDLE immediately when recording stops
+            if (current_state_ == RecorderState::STOPPING) {
+                current_state_ = RecorderState::IDLE;
+                std::cout << "[WEB_CONTROLLER] State transitioned to IDLE" << std::endl;
+            }
+            
             if (time_since_stop < 3 && time_since_stop >= 0) {
-                // Keep "Recording Stopped" message visible
-                // Don't update LCD
-                if (current_state_ != RecorderState::IDLE) {
-                    current_state_ = RecorderState::IDLE;  // Transition to IDLE after first check
-                }
+                // Keep "Recording Stopped" message visible for 3 seconds
+                // (but state is already IDLE)
             } else if (hotspot_active_ && web_server_running_) {
                 updateLCD("Web Controller", "10.42.0.1:8080");
             } else if (hotspot_active_) {
@@ -1219,6 +1274,8 @@ void DroneWebController::handleClientRequest(int client_socket) {
     // Parse HTTP request
     if (request.find("GET / ") != std::string::npos) {
         response = generateMainPage();
+    } else if (request.find("GET /api/snapshot") != std::string::npos) {
+        response = generateSnapshotJPEG();
     } else if (request.find("GET /api/status") != std::string::npos) {
         response = generateStatusAPI();
     } else if (request.find("POST /api/start_recording") != std::string::npos) {
@@ -1351,6 +1408,26 @@ void DroneWebController::handleClientRequest(int client_socket) {
         } else {
             response = generateAPIResponse("Missing exposure parameter");
         }
+        
+    } else if (request.find("POST /api/set_camera_gain") != std::string::npos) {
+        // Parse gain from request body
+        size_t gain_pos = request.find("gain=");
+        if (gain_pos != std::string::npos) {
+            std::string gain_str = request.substr(gain_pos + 5, 10);
+            try {
+                int gain = std::stoi(gain_str);
+                if (gain >= -1 && gain <= 100) {  // -1 = auto, 0-100 = manual
+                    setCameraGain(gain);
+                    response = generateAPIResponse("Gain updated to " + std::to_string(gain));
+                } else {
+                    response = generateAPIResponse("Gain must be -1 (auto) or 0-100 (manual)");
+                }
+            } catch (...) {
+                response = generateAPIResponse("Invalid gain value");
+            }
+        } else {
+            response = generateAPIResponse("Missing exposure parameter");
+        }
     } else if (request.find("POST /api/shutdown") != std::string::npos) {
         response = generateAPIResponse("Shutdown initiated");
         send(client_socket, response.c_str(), response.length(), 0);
@@ -1405,23 +1482,61 @@ std::string DroneWebController::generateMainPage() {
            ".shutdown{background:#6c757d;color:white;box-shadow:0 2px 4px rgba(108,117,125,0.3)}"
            "button:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,0.2)}"
            "button:disabled{opacity:0.6;cursor:not-allowed;transform:none}"
-           "h1{color:#495057;margin-bottom:25px}</style>"
+           "h1{color:#495057;margin-bottom:25px}"
+           ".tabs{display:flex;background:#e9ecef;border-radius:8px 8px 0 0;overflow:hidden;margin:0 -25px;margin-top:-10px;padding:0}"
+           ".tab{flex:1;padding:12px 8px;border:none;background:#e9ecef;color:#495057;font-size:14px;font-weight:bold;cursor:pointer;transition:all 0.3s;border-bottom:3px solid transparent}"
+           ".tab:hover{background:#dee2e6}"
+           ".tab.active{background:#fff;color:#007bff;border-bottom:3px solid #007bff}"
+           ".tab-content{display:none;padding-top:15px}"
+           ".tab-content.active{display:block}"
+           ".slider-container{margin:15px 0}"
+           ".slider-container input[type='range']{width:100%}"
+           ".gain-guide{display:flex;justify-content:space-between;font-size:11px;margin-top:5px}"
+           ".gain-range{text-align:center;flex:1}"
+           ".gain-range.bright{color:#28a745}"
+           ".gain-range.normal{color:#ffc107}"
+           ".gain-range.low{color:#ff8800}"
+           ".gain-range.dark{color:#dc3545}"
+           ".livestream-container{text-align:center;margin:20px 0}"
+           ".livestream-img{max-width:100%;height:auto;border-radius:8px;border:2px solid #dee2e6;background:#000}"
+           ".fullscreen-btn{background:#007bff;color:white;padding:10px 20px;font-size:14px}"
+           ".fullscreen-overlay{display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.95);z-index:9999;justify-content:center;align-items:center;flex-direction:column}"
+           ".fullscreen-overlay.active{display:flex;cursor:default}"
+           ".fullscreen-img{max-width:90vw;max-height:80vh;border-radius:8px;pointer-events:none}"
+           ".close-fullscreen{position:absolute;top:20px;right:20px;background:#dc3545;color:white;border:none;padding:15px 25px;border-radius:8px;font-size:18px;cursor:pointer;font-weight:bold;z-index:10001;pointer-events:auto}"
+           ".close-fullscreen:hover{background:#c82333;transform:scale(1.1)}"
+           ".close-fullscreen:active{transform:scale(0.95)}"
+           ".system-info{background:#f8f9fa;padding:12px;border-radius:8px;margin:10px 0;text-align:left;font-size:14px}"
+           ".system-info strong{color:#495057}"
+           "</style>"
            "<script>"
-           "let currentRecMode='svo2',currentDepthMode='NEURAL_LITE';"
-           "const shutterSpeeds=["
-           "{s:0,e:-1,label:'Auto'},"
-           "{s:60,e:100,label:'1/60'},"
-           "{s:90,e:67,label:'1/90'},"
-           "{s:120,e:50,label:'1/120'},"
-           "{s:150,e:40,label:'1/150'},"
-           "{s:180,e:33,label:'1/180'},"
-           "{s:240,e:25,label:'1/240'},"
-           "{s:360,e:17,label:'1/360'},"
-           "{s:480,e:13,label:'1/480'},"
-           "{s:720,e:8,label:'1/720'},"
-           "{s:960,e:6,label:'1/960'},"
-           "{s:1200,e:5,label:'1/1200'}"
-           "];"
+           "let currentRecMode='svo2',currentDepthMode='NEURAL_LITE',livestreamActive=false,livestreamInterval=null,fullscreenInterval=null,livestreamFPS=2,currentCameraFPS=60,lastFrameTime=Date.now(),frameCount=0,actualLivestreamFPS=0;"
+           "const exposureToShutterSpeed=(exposure,fps)=>{"
+           "if(exposure<=0)return 'Auto';"
+           "let shutter=Math.round((fps*100)/exposure);"
+           "return '1/'+shutter;"
+           "};"
+           "const getShutterSpeedsForFPS=(fps)=>{"
+           "const cleanSpeeds=[60,90,120,150,180,240,360,480,720,960,1200];"
+           "return cleanSpeeds.map(s=>{"
+           "let exposure=Math.round((fps*100)/s);"
+           "if(exposure<1)exposure=1;"
+           "if(exposure>100)exposure=100;"
+           "return {s:s,e:exposure};"
+           "}).filter(item=>item.e>=5&&item.e<=100);"
+           "};"
+           "let shutterSpeeds=[{s:0,e:-1}];"  // Auto mode, will be populated on init
+           "function switchTab(tabName){"
+           "document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));"
+           "document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));"
+           "document.querySelector('.tab[data-tab=\"'+tabName+'\"]').classList.add('active');"
+           "document.getElementById(tabName+'-tab').classList.add('active');"
+           "if(tabName==='livestream'&&livestreamActive){"
+           "startLivestream();"
+           "}else if(tabName!=='livestream'){"
+           "stopLivestream();"
+           "}"
+           "}"
            "function updateStatus(){"
            "fetch('/api/status').then(r=>r.json()).then(data=>{"
            "let stateText=data.state===0?'IDLE':data.state===1?'RECORDING':'STOPPING';"
@@ -1430,6 +1545,15 @@ std::string DroneWebController::generateMainPage() {
            "let isInitializing=data.camera_initializing;"
            "currentRecMode=data.recording_mode;"
            "currentDepthMode=data.depth_mode;"
+           "if(data.camera_fps!==undefined&&data.camera_fps!==currentCameraFPS){"
+           "currentCameraFPS=data.camera_fps;"
+           "shutterSpeeds=[{s:0,e:-1}].concat(getShutterSpeedsForFPS(currentCameraFPS));"
+           "console.log('Camera FPS changed to '+currentCameraFPS+', regenerated '+shutterSpeeds.length+' shutter speed options');"
+           "let maxIndex=shutterSpeeds.length-1;"
+           "if(document.getElementById('exposureSlider').max!=maxIndex){"
+           "document.getElementById('exposureSlider').max=maxIndex;"
+           "}"
+           "}"
            "if(data.camera_exposure!==undefined){"
            "let exposure=data.camera_exposure;"
            "let shutterIndex=0;"
@@ -1442,8 +1566,15 @@ std::string DroneWebController::generateMainPage() {
            "}"
            "}"
            "document.getElementById('exposureSlider').value=shutterIndex;"
-           "document.getElementById('exposureValue').textContent=shutterSpeeds[shutterIndex].label;"
+           "let displayLabel=(shutterIndex===0)?'Auto':'1/'+shutterSpeeds[shutterIndex].s;"
+           "document.getElementById('exposureValue').textContent=displayLabel;"
            "document.getElementById('exposureActual').textContent='(E:'+exposure+')';"
+           "}"
+           "if(data.camera_gain!==undefined){"
+           "let gain=data.camera_gain;"
+           "document.getElementById('gainSlider').value=gain;"
+           "document.getElementById('gainValue').textContent=gain===-1?'Auto':gain;"
+           "updateGainGuide(gain);"
            "}"
            "document.getElementById('modeRadioSVO2').checked=(currentRecMode==='svo2');"
            "document.getElementById('modeRadioDepthInfo').checked=(currentRecMode==='svo2_depth_info');"
@@ -1466,6 +1597,11 @@ std::string DroneWebController::generateMainPage() {
            "document.getElementById('notification').className='notification warning show';"
            "document.getElementById('notification').textContent=data.status_message||'Camera initializing, please wait...';"
            "document.getElementById('startBtn').disabled=true;"
+           "if(livestreamActive){"
+           "console.log('⚠️ Camera initializing - auto-stopping livestream for safety');"
+           "document.getElementById('livestreamToggle').checked=false;"
+           "stopLivestream();"
+           "}"
            "}else if(data.status_message){"
            "document.getElementById('notification').className='notification info show';"
            "document.getElementById('notification').textContent=data.status_message;"
@@ -1476,6 +1612,8 @@ std::string DroneWebController::generateMainPage() {
            "document.getElementById('statusDiv').className='status '+(isRecording?'recording':'idle');"
            "document.getElementById('startBtn').disabled=isRecording||isInitializing;"
            "document.getElementById('stopBtn').disabled=!isRecording;"
+           "document.getElementById('livestreamToggle').disabled=isInitializing;"
+           "document.getElementById('livestreamFPSSelect').disabled=isInitializing;"
            "document.getElementById('depthModeGroup').style.display=showDepth?'block':'none';"
            "document.getElementById('depthFpsGroup').style.display=showDepthFps?'block':'none';"
            "if(currentRecMode==='svo2_depth_info'){"
@@ -1537,7 +1675,7 @@ std::string DroneWebController::generateMainPage() {
            "});"
            "}"
            "function setCameraResolution(){"
-           "let mode=document.getElementById('cameraResolutionSelect').value;"
+           "let mode=document.getElementById('cameraResolutionSelectLive').value;"
            "fetch('/api/set_camera_resolution',{method:'POST',body:'mode='+mode}).then(r=>r.json()).then(data=>{"
            "console.log(data.message);"
            "document.getElementById('notification').className='notification warning show';"
@@ -1546,20 +1684,9 @@ std::string DroneWebController::generateMainPage() {
            "});"
            "}"
            "function setCameraExposure(shutterIndex){"
-           "const shutterSpeeds=[{s:0,e:-1,label:'Auto'},"  // Auto mode
-           "{s:60,e:100,label:'1/60'},"     // 100% at 60fps
-           "{s:90,e:67,label:'1/90'},"      // 67% at 60fps
-           "{s:120,e:50,label:'1/120'},"    // 50% at 60fps (default for 60fps)
-           "{s:150,e:40,label:'1/150'},"    // 40% at 60fps
-           "{s:180,e:33,label:'1/180'},"    // 33% at 60fps
-           "{s:240,e:25,label:'1/240'},"    // 25% at 60fps
-           "{s:360,e:17,label:'1/360'},"    // 17% at 60fps
-           "{s:480,e:13,label:'1/480'},"    // 13% at 60fps
-           "{s:720,e:8,label:'1/720'},"     // 8% at 60fps
-           "{s:960,e:6,label:'1/960'},"     // 6% at 60fps
-           "{s:1200,e:5,label:'1/1200'}];"  // 5% at 60fps (minimum)
            "let selected=shutterSpeeds[shutterIndex];"
-           "document.getElementById('exposureValue').textContent=selected.label;"
+           "let label=(selected.e===-1)?'Auto':'1/'+selected.s;"
+           "document.getElementById('exposureValue').textContent=label;"
            "document.getElementById('exposureActual').textContent='(E:'+selected.e+')';"
            "fetch('/api/set_camera_exposure',{method:'POST',body:'exposure='+selected.e}).then(r=>r.json()).then(data=>{"
            "console.log(data.message);"
@@ -1572,12 +1699,144 @@ std::string DroneWebController::generateMainPage() {
            "fetch('/api/stop_recording',{method:'POST'}).then(()=>updateStatus());"
            "}"
            "function shutdown(){if(confirm('System herunterfahren?')){fetch('/api/shutdown',{method:'POST'});}}"
-           "setInterval(updateStatus,1000);updateStatus();"
+           "function setCameraGain(gain){"
+           "document.getElementById('gainValue').textContent=gain===-1||gain===-2?'Auto':gain;"
+           "updateGainGuide(gain);"
+           "fetch('/api/set_camera_gain',{method:'POST',body:'gain='+gain}).then(r=>r.json()).then(data=>{"
+           "console.log(data.message);"
+           "});"
+           "}"
+           "function updateGainGuide(gain){"
+           "document.querySelectorAll('.gain-range').forEach(r=>r.style.fontWeight='normal');"
+           "if(gain>=0&&gain<=20){document.querySelector('.gain-range.bright').style.fontWeight='bold';}"
+           "else if(gain>=21&&gain<=50){document.querySelector('.gain-range.normal').style.fontWeight='bold';}"
+           "else if(gain>=51&&gain<=80){document.querySelector('.gain-range.low').style.fontWeight='bold';}"
+           "else if(gain>=81&&gain<=100){document.querySelector('.gain-range.dark').style.fontWeight='bold';}"
+           "}"
+           "function toggleLivestream(){"
+           "livestreamActive=document.getElementById('livestreamToggle').checked;"
+           "if(livestreamActive){startLivestream();}else{stopLivestream();}"
+           "}"
+           "function startLivestream(){"
+           "if(livestreamInterval)return;"
+           "document.getElementById('livestreamImage').style.display='block';"
+           "frameCount=0;"
+           "lastFrameTime=Date.now();"
+           "actualLivestreamFPS=0;"
+           "document.getElementById('actualFPS').textContent='-';"
+           "let intervalMs=Math.round(1000/livestreamFPS);"
+           "let img=document.getElementById('livestreamImage');"
+           "img.onload=function(){"
+           "frameCount++;"
+           "let now=Date.now();"
+           "if(now-lastFrameTime>=1000){"
+           "actualLivestreamFPS=frameCount;"
+           "document.getElementById('actualFPS').textContent=actualLivestreamFPS+' FPS';"
+           "frameCount=0;"
+           "lastFrameTime=now;"
+           "}"
+           "};"
+           "livestreamInterval=setInterval(()=>{"
+           "img.src='/api/snapshot?t='+Date.now();"
+           "},intervalMs);"
+           "console.log('Livestream started at '+livestreamFPS+' FPS ('+intervalMs+'ms interval)');"
+           "}"
+           "function stopLivestream(){"
+           "if(livestreamInterval){clearInterval(livestreamInterval);livestreamInterval=null;}"
+           "document.getElementById('livestreamImage').style.display='none';"
+           "document.getElementById('actualFPS').textContent='-';"
+           "console.log('Livestream stopped');"
+           "}"
+           "function enterFullscreen(){"
+           "if(fullscreenInterval){clearInterval(fullscreenInterval);fullscreenInterval=null;}"
+           "document.getElementById('fullscreenOverlay').classList.add('active');"
+           "document.getElementById('fullscreenImage').src='/api/snapshot?t='+Date.now();"
+           "let intervalMs=Math.round(1000/livestreamFPS);"
+           "fullscreenInterval=setInterval(()=>{"
+           "if(document.getElementById('fullscreenOverlay').classList.contains('active')){"
+           "document.getElementById('fullscreenImage').src='/api/snapshot?t='+Date.now();"
+           "}"
+           "},intervalMs);"
+           "console.log('Fullscreen started at '+livestreamFPS+' FPS');"
+           "document.getElementById('fullscreenOverlay').onclick=function(e){"
+           "if(e.target.id==='fullscreenOverlay'){exitFullscreen();}"
+           "};"
+           "}"
+           "function exitFullscreen(){"
+           "console.log('Closing fullscreen...');"
+           "if(fullscreenInterval){clearInterval(fullscreenInterval);fullscreenInterval=null;}"
+           "document.getElementById('fullscreenOverlay').classList.remove('active');"
+           "document.getElementById('fullscreenOverlay').onclick=null;"
+           "console.log('Fullscreen closed');"
+           "}"
+           "function setLivestreamFPS(fps){"
+           "livestreamFPS=parseInt(fps);"
+           "console.log('Livestream FPS changed to '+livestreamFPS);"
+           "updateNetworkStats();"
+           "if(livestreamActive){"
+           "stopLivestream();"
+           "startLivestream();"
+           "}"
+           "}"
+           "function updateNetworkStats(){"
+           "let fps=livestreamFPS;"
+           "let bytesPerFrame=75000;"
+           "let bytesPerSecond=fps*bytesPerFrame;"
+           "let kbps=(bytesPerSecond/1024).toFixed(1);"
+           "let mbps=(bytesPerSecond/1024/1024).toFixed(2);"
+           "let display='';"
+           "if(bytesPerSecond<1024*1024){"
+           "display=kbps+' KB/s';"
+           "}else{"
+           "display=mbps+' MB/s';"
+           "}"
+           "display+=' @ '+fps+' FPS (estimated)';"
+           "document.getElementById('networkUsage').textContent=display;"
+           "if(document.getElementById('livestreamNetworkUsage')){"
+           "document.getElementById('livestreamNetworkUsage').textContent=display;"
+           "}"
+           "}"
+           "function setupFullscreenButton(){"
+           "let btn=document.getElementById('closeFullscreenBtn');"
+           "if(btn){"
+           "btn.addEventListener('click',function(e){"
+           "e.stopPropagation();"
+           "e.preventDefault();"
+           "console.log('Close button clicked (event listener)');"
+           "exitFullscreen();"
+           "});"
+           "console.log('✅ Fullscreen close button event listener attached');"
+           "}else{"
+           "console.error('❌ Close fullscreen button not found! DOM may not be ready.');"
+           "}"
+           "}"
+           "document.addEventListener('DOMContentLoaded',function(){"
+           "console.log('DOM loaded, setting up UI...');"
+           "shutterSpeeds=[{s:0,e:-1}].concat(getShutterSpeedsForFPS(currentCameraFPS));"
+           "document.getElementById('exposureSlider').max=shutterSpeeds.length-1;"
+           "document.getElementById('livestreamToggle').checked=false;"
+           "document.getElementById('livestreamFPSSelect').value='2';"
+           "livestreamActive=false;"
+           "console.log('Livestream initialized: OFF, 2 FPS default');"
+           "setupFullscreenButton();"
+           "setInterval(updateStatus,1000);"
+           "setInterval(updateNetworkStats,2000);"
+           "updateStatus();"
+           "updateNetworkStats();"
+           "console.log('UI setup complete');"
+           "});"
            "</script></head><body>"
            "<div class='container'>"
            "<h1>🚁 DRONE CONTROLLER</h1>"
            "<div id='notification' class='notification'></div>"
            "<div id='statusDiv' class='status idle'>Status: <span id='status'>Loading...</span></div>"
+           "<div class='tabs'>"
+           "<button class='tab active' data-tab='recording' onclick='switchTab(\"recording\")'>📹 Recording</button>"
+           "<button class='tab' data-tab='livestream' onclick='switchTab(\"livestream\")'>📷 Livestream</button>"
+           "<button class='tab' data-tab='system' onclick='switchTab(\"system\")'>⚙️ System</button>"
+           "<button class='tab' data-tab='power' onclick='switchTab(\"power\")'>🔋 Power</button>"
+           "</div>"
+           "<div id='recording-tab' class='tab-content active'>"
            "<div class='config-section'>"
            "<h3>Recording Mode</h3>"
            "<div class='radio-group'>"
@@ -1590,12 +1849,12 @@ std::string DroneWebController::generateMainPage() {
            "<div class='select-group' id='depthModeGroup' style='display:none'>"
            "<label>Depth Computation Mode:</label>"
            "<select id='depthModeSelect' onchange='setDepthMode()'>"
-           "<option value='neural_lite'>Neural Lite ⭐ (Recommended)</option>"
+           "<option value='neural_plus' selected>Neural Plus ⭐ (Best Quality)</option>"
            "<option value='neural'>Neural</option>"
-           "<option value='neural_plus'>Neural Plus</option>"
-           "<option value='performance'>Performance</option>"
-           "<option value='quality'>Quality</option>"
+           "<option value='neural_lite'>Neural Lite (Fast)</option>"
            "<option value='ultra'>Ultra</option>"
+           "<option value='quality'>Quality</option>"
+           "<option value='performance'>Performance</option>"
            "<option value='none'>None (Images Only)</option>"
            "</select>"
            "<div class='mode-info'>⚠️ Changing depth mode reinitializes the camera</div>"
@@ -1604,26 +1863,6 @@ std::string DroneWebController::generateMainPage() {
            "<label>Depth Recording FPS: <span id='depthFpsValue'>10</span> (0 = test mode)</label>"
            "<input type='range' id='depthFpsSlider' min='0' max='30' value='10' oninput='setDepthRecordingFPS(this.value)'>"
            "<div class='mode-info'>0 FPS = Compute but don't save (performance test)</div>"
-           "</div>"
-           "</div>"
-           "<div class='config-section'>"
-           "<h3>⚙️ Camera Settings</h3>"
-           "<div class='select-group'>"
-           "<label>Resolution & FPS:</label>"
-           "<select id='cameraResolutionSelect' onchange='setCameraResolution()'>"
-           "<option value='hd2k_15'>HD2K (2208×1242) @ 15 FPS</option>"
-           "<option value='hd1080_30'>HD1080 (1920×1080) @ 30 FPS</option>"
-           "<option value='hd720_60' selected>HD720 (1280×720) @ 60 FPS ⭐</option>"
-           "<option value='hd720_30'>HD720 (1280×720) @ 30 FPS</option>"
-           "<option value='hd720_15'>HD720 (1280×720) @ 15 FPS</option>"
-           "<option value='vga_100'>VGA (672×376) @ 100 FPS</option>"
-           "</select>"
-           "<div class='mode-info'>⚠️ Changing resolution/FPS reinitializes the camera</div>"
-           "</div>"
-           "<div class='select-group'>"
-           "<label>Shutter Speed: <span id='exposureValue'>1/120</span> <span id='exposureActual' style='font-size:11px;color:#888;font-weight:normal'>(E:50)</span></label>"
-           "<input type='range' id='exposureSlider' min='0' max='11' value='3' step='1' oninput='setCameraExposure(this.value)'>"
-           "<div class='mode-info'>Shutter speeds: Auto, 1/60, 1/90, 1/120 ⭐, 1/150, 1/180, 1/240, 1/360, 1/480, 1/720, 1/960, 1/1200</div>"
            "</div>"
            "</div>"
            "<div id='progress' style='display:none'>"
@@ -1637,9 +1876,118 @@ std::string DroneWebController::generateMainPage() {
            "<div class='info-item'>Info: <strong><span id='filename'>-</span></strong></div>"
            "</div></div>"
            "<button id='startBtn' class='start' onclick='startRecording()'>START RECORDING</button><br>"
-           "<button id='stopBtn' class='stop' onclick='stopRecording()'>STOP RECORDING</button><br>"
-           "<button class='shutdown' onclick='shutdown()'>SHUTDOWN SYSTEM</button>"
-           "</div></body></html>";
+           "<button id='stopBtn' class='stop' onclick='stopRecording()'>STOP RECORDING</button>"
+           "</div>"
+           "<div id='livestream-tab' class='tab-content'>"
+           "<div class='config-section'>"
+           "<h3>📷 Live Preview</h3>"
+           "<label style='display:block;margin:15px 0'>"
+           "<input type='checkbox' id='livestreamToggle' onchange='toggleLivestream()'> Enable Livestream"
+           "</label>"
+           "<div class='livestream-container'>"
+           "<img id='livestreamImage' class='livestream-img' style='display:none' alt='Livestream'/>"
+           "</div>"
+           "<div class='select-group'>"
+           "<label>Livestream FPS:</label>"
+           "<select id='livestreamFPSSelect' onchange='setLivestreamFPS(this.value)'>"
+           "<option value='2' selected>2 FPS</option>"
+           "<option value='4'>4 FPS</option>"
+           "<option value='6'>6 FPS</option>"
+           "<option value='8'>8 FPS</option>"
+           "<option value='10'>10 FPS</option>"
+           "</select>"
+           "</div>"
+           "<div class='system-info' style='margin:15px 0'>"
+           "<strong>📊 Network Usage:</strong> <span id='livestreamNetworkUsage'>Calculating...</span><br>"
+           "<strong>📷 Actual FPS:</strong> <span id='actualFPS'>-</span>"
+           "</div>"
+           "<button class='fullscreen-btn' onclick='enterFullscreen()'>⛶ Fullscreen</button>"
+           "</div>"
+           "<div class='config-section'>"
+           "<h3>⚙️ Camera Settings</h3>"
+           "<div class='select-group'>"
+           "<label>Resolution & FPS:</label>"
+           "<select id='cameraResolutionSelectLive' onchange='setCameraResolution()'>"
+           "<option value='hd2k_15'>HD2K (2208×1242) @ 15 FPS</option>"
+           "<option value='hd1080_30'>HD1080 (1920×1080) @ 30 FPS</option>"
+           "<option value='hd720_60' selected>HD720 (1280×720) @ 60 FPS ⭐</option>"
+           "<option value='hd720_30'>HD720 (1280×720) @ 30 FPS</option>"
+           "<option value='hd720_15'>HD720 (1280×720) @ 15 FPS</option>"
+           "<option value='vga_100'>VGA (672×376) @ 100 FPS</option>"
+           "</select>"
+           "<div class='mode-info'>⚠️ Changing resolution/FPS reinitializes the camera</div>"
+           "</div>"
+           "<div class='slider-container'>"
+           "<label>Shutter Speed: <span id='exposureValue'>1/120</span> <span id='exposureActual' style='font-size:11px;color:#888'>(E:50)</span></label>"
+           "<input type='range' id='exposureSlider' min='0' max='11' value='3' step='1' oninput='setCameraExposure(this.value)'>"
+           "<div class='mode-info'>Exposure-based (Auto to Fast). Shutter speed adapts to camera FPS.</div>"
+           "</div>"
+           "<div class='slider-container'>"
+           "<label>Gain: <span id='gainValue'>30</span></label>"
+           "<input type='range' id='gainSlider' min='0' max='100' value='30' step='1' oninput='setCameraGain(this.value)'>"
+           "<div class='gain-guide'>"
+           "<div class='gain-range bright'>0-20<br>Bright</div>"
+           "<div class='gain-range normal'>21-50<br>Normal ⭐</div>"
+           "<div class='gain-range low'>51-80<br>Low Light</div>"
+           "<div class='gain-range dark'>81-100<br>Very Dark</div>"
+           "</div>"
+           "<div class='mode-info'>Higher gain = brighter image, more noise. Default: 30</div>"
+           "</div>"
+           "</div>"
+           "</div>"
+           "<div id='system-tab' class='tab-content'>"
+           "<div class='config-section'>"
+           "<h3>🌐 Network Status</h3>"
+           "<div class='system-info'>"
+           "<strong>WiFi AP:</strong> DroneController<br>"
+           "<strong>IP Address:</strong> 192.168.4.1 / 10.42.0.1<br>"
+           "<strong>Web UI:</strong> http://192.168.4.1:8080<br>"
+           "<strong>Network Usage:</strong> <span id='networkUsage'>Calculating...</span>"
+           "</div>"
+           "<div class='mode-info'>Use 'iftop' or 'nethogs' in terminal for detailed monitoring:<br>"
+           "<code style='background:#e9ecef;padding:2px 6px;border-radius:4px'>sudo iftop -i wlP1p1s0</code></div>"
+           "</div>"
+           "<div class='config-section'>"
+           "<h3>💾 Storage Status</h3>"
+           "<div class='system-info'>"
+           "<strong>USB Label:</strong> DRONE_DATA<br>"
+           "<strong>Mount:</strong> /media/angelo/DRONE_DATA/<br>"
+           "<strong>Filesystem:</strong> NTFS/exFAT (recommended)"
+           "</div>"
+           "</div>"
+           "<div class='config-section'>"
+           "<h3>🖥️ System Control</h3>"
+           "<button class='shutdown' onclick='shutdown()'>🔴 SHUTDOWN SYSTEM</button>"
+           "</div>"
+           "</div>"
+           "<div id='power-tab' class='tab-content'>"
+           "<div class='config-section'>"
+           "<h3>🔋 Battery Monitor</h3>"
+           "<div class='system-info' style='text-align:center;padding:40px 20px'>"
+           "<p style='font-size:16px;color:#6c757d'>Battery monitoring hardware not yet installed.</p>"
+           "<p style='font-size:14px;color:#888'>Future: Voltage, current, capacity, estimated runtime</p>"
+           "</div>"
+           "</div>"
+           "</div>"
+           "</div>"
+           "<div id='fullscreenOverlay' class='fullscreen-overlay'>"
+           "<button class='close-fullscreen' id='closeFullscreenBtn'>✕ Close</button>"
+           "<img id='fullscreenImage' class='fullscreen-img' alt='Fullscreen View'/>"
+           "</div>"
+           "</body></html>";
+}
+
+// Helper function to extract FPS from RecordingMode
+int getCameraFPSFromMode(RecordingMode mode) {
+    switch(mode) {
+        case RecordingMode::HD720_60FPS: return 60;
+        case RecordingMode::HD720_30FPS: return 30;
+        case RecordingMode::HD720_15FPS: return 15;
+        case RecordingMode::HD1080_30FPS: return 30;
+        case RecordingMode::HD2K_15FPS: return 15;
+        case RecordingMode::VGA_100FPS: return 100;
+        default: return 60;  // Fallback
+    }
 }
 
 std::string DroneWebController::generateStatusAPI() {
@@ -1667,7 +2015,10 @@ std::string DroneWebController::generateStatusAPI() {
          << "\"frame_count\":" << status.frame_count << ","
          << "\"current_fps\":" << std::fixed << std::setprecision(1) << status.current_fps << ","
          << "\"depth_fps\":" << std::fixed << std::setprecision(1) << status.depth_fps << ","
+         << "\"camera_fps\":" << getCameraFPSFromMode(camera_resolution_) << ","
          << "\"camera_initializing\":" << (status.camera_initializing ? "true" : "false") << ","
+         << "\"camera_exposure\":" << getCameraExposure() << ","
+         << "\"camera_gain\":" << getCameraGain() << ","
          << "\"status_message\":\"" << status.status_message << "\","
          << "\"error_message\":\"" << status.error_message << "\"}";
     return json.str();
@@ -1675,6 +2026,95 @@ std::string DroneWebController::generateStatusAPI() {
 
 std::string DroneWebController::generateAPIResponse(const std::string& message) {
     return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"message\":\"" + message + "\"}";
+}
+
+std::string DroneWebController::generateSnapshotJPEG() {
+    // CRITICAL: Check shutdown flag FIRST to prevent camera access during teardown
+    if (shutdown_requested_) {
+        // Return a 1x1 transparent pixel instead of error to prevent GUI flicker
+        std::string tiny_gif = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xFF\xFF\xFF\x21\xF9\x04\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B";
+        return "HTTP/1.1 200 OK\r\nContent-Type: image/gif\r\nContent-Length: " + std::to_string(tiny_gif.length()) + "\r\n\r\n" + tiny_gif;
+    }
+    
+    // SAFETY: Reject snapshot requests during camera reinitialization
+    if (camera_initializing_) {
+        std::cout << "[WEB_CONTROLLER] Snapshot request rejected - camera reinitializing" << std::endl;
+        return "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nCamera reinitializing";
+    }
+    
+    // Check if camera is available
+    if (!svo_recorder_ && !raw_recorder_) {
+        std::cerr << "[WEB_CONTROLLER] No camera available for snapshot" << std::endl;
+        return "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nCamera not initialized";
+    }
+    
+    sl::Camera* camera = nullptr;
+    if (svo_recorder_) {
+        camera = svo_recorder_->getCamera();
+    } else if (raw_recorder_) {
+        camera = raw_recorder_->getCamera();
+    }
+    
+    if (!camera || !camera->isOpened()) {
+        std::cerr << "[WEB_CONTROLLER] Camera not opened for snapshot" << std::endl;
+        return "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nCamera not open";
+    }
+    
+    // Double-check shutdown flag before camera grab (race condition protection)
+    if (shutdown_requested_) {
+        std::cout << "[WEB_CONTROLLER] Snapshot aborted - shutdown detected" << std::endl;
+        return "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nServer shutting down";
+    }
+    
+    // Grab a frame
+    sl::ERROR_CODE err = camera->grab();
+    if (err != sl::ERROR_CODE::SUCCESS) {
+        // CORRUPTED_FRAME is common with dark images or covered lens - treat as warning, not error
+        if (err == sl::ERROR_CODE::CORRUPTED_FRAME) {
+            std::cout << "[WEB_CONTROLLER] Warning: Frame may be corrupted (dark image or covered lens), continuing anyway..." << std::endl;
+            // Continue to retrieve image - it will be dark/corrupted but better than no image
+        } else {
+            std::cerr << "[WEB_CONTROLLER] Failed to grab frame: " << toString(err) << std::endl;
+            return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to grab frame";
+        }
+    }
+    
+    // Retrieve left image (even if frame was corrupted - ZED Explorer does the same)
+    sl::Mat zed_image;
+    err = camera->retrieveImage(zed_image, sl::VIEW::LEFT);
+    if (err != sl::ERROR_CODE::SUCCESS) {
+        std::cerr << "[WEB_CONTROLLER] Failed to retrieve image: " << toString(err) << std::endl;
+        return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to retrieve image";
+    }
+    
+    // Convert ZED Mat to OpenCV Mat
+    cv::Mat cv_image(zed_image.getHeight(), zed_image.getWidth(), CV_8UC4, zed_image.getPtr<sl::uchar1>(sl::MEM::CPU));
+    cv::Mat cv_image_rgb;
+    cv::cvtColor(cv_image, cv_image_rgb, cv::COLOR_BGRA2BGR);
+    
+    // Encode to JPEG (quality 85 for good balance)
+    std::vector<uchar> jpeg_buffer;
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 85};
+    if (!cv::imencode(".jpg", cv_image_rgb, jpeg_buffer, params)) {
+        std::cerr << "[WEB_CONTROLLER] Failed to encode JPEG" << std::endl;
+        return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to encode JPEG";
+    }
+    
+    // Build HTTP response with JPEG data
+    std::ostringstream response;
+    response << "HTTP/1.1 200 OK\r\n"
+             << "Content-Type: image/jpeg\r\n"
+             << "Content-Length: " << jpeg_buffer.size() << "\r\n"
+             << "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+             << "Pragma: no-cache\r\n"
+             << "Expires: 0\r\n"
+             << "\r\n";
+    
+    // Append binary JPEG data
+    std::string response_str = response.str();
+    response_str.append(reinterpret_cast<const char*>(jpeg_buffer.data()), jpeg_buffer.size());
+    
+    return response_str;
 }
 
 void DroneWebController::signalHandler(int signal) {
@@ -1687,10 +2127,33 @@ void DroneWebController::signalHandler(int signal) {
 void DroneWebController::handleShutdown() {
     std::cout << std::endl << "[WEB_CONTROLLER] Initiating shutdown sequence..." << std::endl;
     
+    // STEP 1: Set shutdown flag FIRST to stop all new operations
     shutdown_requested_ = true;
     
-    // Stop recording if active (avoid calling stopRecording from web thread)
+    // STEP 2: Stop web server IMMEDIATELY to reject new snapshot requests
+    // This prevents race conditions with camera closure
+    web_server_running_ = false;
+    
+    // Close server socket to unblock accept() and force server thread to exit
+    int fd = server_fd_.load();
+    if (fd >= 0) {
+        std::cout << "[WEB_CONTROLLER] Closing web server socket..." << std::endl;
+        shutdown(fd, SHUT_RDWR);  // Shutdown both directions
+        close(fd);
+        server_fd_ = -1;
+    }
+    
+    // Wait for web server thread to finish (ensures no more snapshot requests)
+    if (web_server_thread_ && web_server_thread_->joinable()) {
+        std::cout << "[WEB_CONTROLLER] Waiting for web server thread..." << std::endl;
+        web_server_thread_->join();
+        web_server_thread_.reset();
+        std::cout << "[WEB_CONTROLLER] ✓ Web server thread stopped" << std::endl;
+    }
+    
+    // STEP 3: Now safe to stop recording (no more snapshot interference)
     if (recording_active_) {
+        std::cout << "[WEB_CONTROLLER] Stopping active recording..." << std::endl;
         recording_active_ = false;
         current_state_ = RecorderState::STOPPING;
         
@@ -1703,49 +2166,40 @@ void DroneWebController::handleShutdown() {
         }
         
         current_state_ = RecorderState::IDLE;
+        std::cout << "[WEB_CONTROLLER] ✓ Recording stopped" << std::endl;
     }
     
-    // Explicitly close ZED cameras to free them for next restart
+    // STEP 4: Close ZED cameras (safe now - no snapshot requests can arrive)
+    std::cout << "[ZED] Closing camera explicitly..." << std::endl;
     if (svo_recorder_) {
+        std::cout << "[ZED] Closing ZED camera..." << std::endl;
         svo_recorder_->close();
+        std::cout << "[ZED] ✓ SVO recorder closed" << std::endl;
     }
     if (raw_recorder_) {
+        std::cout << "[ZED] Closing RAW recorder..." << std::endl;
         raw_recorder_->close();
+        std::cout << "[ZED] ✓ RAW recorder closed" << std::endl;
     }
     
-    // Signal web server to stop
-    web_server_running_ = false;
-    
-    // Close server socket to unblock accept() and force server thread to exit
-    int fd = server_fd_.load();
-    if (fd >= 0) {
-        shutdown(fd, SHUT_RDWR);  // Shutdown both directions
-        close(fd);
-        server_fd_ = -1;
-    }
-    
-    // Wait for web server thread to finish
-    if (web_server_thread_ && web_server_thread_->joinable()) {
-        std::cout << "[WEB_CONTROLLER] Waiting for web server thread..." << std::endl;
-        web_server_thread_->join();
-        web_server_thread_.reset();
-        std::cout << "[WEB_CONTROLLER] Web server thread stopped" << std::endl;
-    }
-    
-    // Stop hotspot
+    // STEP 5: Teardown WiFi hotspot
     if (hotspot_active_) {
+        std::cout << "[WEB_CONTROLLER] Tearing down WiFi hotspot..." << std::endl;
         teardownWiFiHotspot();
         hotspot_active_ = false;
+        std::cout << "[WEB_CONTROLLER] ✓ Hotspot teardown complete" << std::endl;
     }
     
-    // Wait for system monitor thread (safe - not called from monitor thread)
+    // STEP 6: Stop system monitor thread
     if (system_monitor_thread_ && system_monitor_thread_->joinable()) {
+        std::cout << "[WEB_CONTROLLER] Stopping system monitor..." << std::endl;
         system_monitor_thread_->join();
         system_monitor_thread_.reset();
+        std::cout << "[WEB_CONTROLLER] ✓ System monitor stopped" << std::endl;
     }
     
     updateLCD("Shutdown", "Complete");
-    std::cout << "[WEB_CONTROLLER] Shutdown complete" << std::endl;
+    std::cout << "[WEB_CONTROLLER] ✓✓✓ Shutdown complete ✓✓✓" << std::endl;
 }
 
 void DroneWebController::depthVisualizationLoop() {

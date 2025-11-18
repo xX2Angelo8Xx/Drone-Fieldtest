@@ -437,6 +437,7 @@ bool SafeHotspotManager::createHotspot(const std::string& ssid,
                << " ssid \"" << ssid << "\""
                << " mode ap"
                << " 802-11-wireless.band bg"
+               << " 802-11-wireless.powersave disable"  // Disable power saving for max performance
                << " ipv4.method shared"
                << " ipv4.addresses " << ip_address << "/24";
     
@@ -446,6 +447,16 @@ bool SafeHotspotManager::createHotspot(const std::string& ssid,
         return false;
     }
     log("SUCCESS", "Hotspot profile created");
+    
+    // Step 3.5: Set maximum TX power (20 dBm = 100 mW)
+    log("INFO", "Step 3.5: Setting maximum TX power...");
+    std::string txpower_cmd = "iw dev " + WIFI_INTERFACE + " set txpower fixed 2000";  // 2000 = 20.00 dBm
+    if (executeCommandSimple(txpower_cmd) != 0) {
+        log("WARN", "Failed to set TX power (may require elevated privileges or not supported)");
+        // Non-fatal, continue anyway
+    } else {
+        log("SUCCESS", "TX power set to 20 dBm (100 mW)");
+    }
     sleep(1);
     
     // Step 4: Set WiFi security

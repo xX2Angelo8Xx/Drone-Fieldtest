@@ -55,6 +55,10 @@ public:
     int getCameraExposure();  // Removed const - ZED SDK method is not const
     bool isExposureAuto();    // Removed const
     
+    bool setCameraGain(int gain_value);  // -1 = auto, 0-100 = manual
+    int getCameraGain();
+    bool isGainAuto();
+    
     // Get current recording mode
     RecordingMode getCurrentMode() const { return current_mode_; }
     

@@ -2,7 +2,7 @@
 
 **Embedded drone field testing system for Jetson Orin Nano with ZED 2i stereo camera and wireless web control interface**
 
-[![Version](https://img.shields.io/badge/version-v1.2--stable-brightgreen)](https://github.com/xX2Angelo8Xx/Drone-Fieldtest/releases)
+[![Version](https://img.shields.io/badge/version-v1.5.2--stable-brightgreen)](https://github.com/xX2Angelo8Xx/Drone-Fieldtest/releases)
 [![Platform](https://img.shields.io/badge/platform-Jetson%20Orin%20Nano-orange)](https://developer.nvidia.com/embedded/jetson-orin-nano-developer-kit)
 [![Camera](https://img.shields.io/badge/camera-ZED%202i-blue)](https://www.stereolabs.com/zed-2i/)
 
@@ -10,12 +10,14 @@
 
 This system provides **wireless drone control** via smartphone with **real-time recording capabilities**. Perfect for AI training data collection, field testing, and autonomous drone operations.
 
-### ✅ Core Features
+### ✅ Core Features (v1.5.2)
 
-- **📱 WiFi Web Control**: Phone-based interface with real-time status
+- **📱 WiFi Web Control**: Phone-based interface with real-time status (~50-60m range)
 - **📹 HD Video Recording**: Up to 9.95GB continuous recording (NTFS/exFAT)
+- **🎥 Multiple Recording Modes**: SVO2 only, SVO2+Depth Info, SVO2+Depth Images, RAW Frames
+- **🧠 Automatic Resource Management**: Depth mode auto-switching, robust cleanup
+- **� Clean Shutter Speeds**: Photographer-friendly values (1/60, 1/90, 1/120, etc.)
 - **🔄 Progress Monitoring**: Live file size, speed, elapsed time display
-- **🚀 One-Click Autostart**: Desktop file-based autostart control
 - **⚡ Quick Commands**: `drone` command starts system instantly
 - **🔧 Field-Ready**: Robust WiFi reconnection and error recovery
 
