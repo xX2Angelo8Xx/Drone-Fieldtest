@@ -483,6 +483,17 @@ sudo fsck /dev/sdX1
 
 ## 📚 Additional Documentation
 
+### 🎓 NEW DEVELOPER ONBOARDING (START HERE!)
+
+**`docs/CRITICAL_LEARNINGS_v1.3.md`** - **REQUIRED READING**
+- Complete development journey and lessons learned
+- Detailed analysis of all major problems and solutions
+- Common mistakes to avoid
+- Testing methodology
+- Performance baselines
+- 5-day onboarding checklist
+- **READ THIS FIRST to avoid repeating solved problems!**
+
 ### Comprehensive Guides
 
 1. **Project Architecture** (`Project_Architecture`)
@@ -509,6 +520,28 @@ sudo fsck /dev/sdX1
    - Systemd units
    - Network configuration
    - sudoers rules
+
+### Problem Analysis & Solutions
+
+6. **4GB Filesystem Issue** (`4GB_SOLUTION_FINAL_STATUS.md`)
+   - Root cause: FAT32 limitation, not ZED SDK
+   - Solution: NTFS/exFAT validation
+   - Testing results (up to 9.9 GB validated)
+
+7. **NVENC Hardware Encoder** (`NVENC_INVESTIGATION_RESULTS.md`)
+   - Why H.264/H.265 don't work on Jetson
+   - LOSSLESS is the only reliable mode
+   - File size implications
+
+8. **Thread Deadlock Fix** (`docs/WEB_DISCONNECT_FIX_v1.3.4.md`)
+   - Web GUI disconnect analysis
+   - `continue` vs `break` in monitor loops
+   - Thread interaction best practices
+
+9. **LCD Thread Conflicts** (`docs/LCD_FINAL_FIX_v1.3.3.md`)
+   - Multiple threads updating LCD
+   - Thread ownership model
+   - State-based LCD control
 
 ### Technical References
 

@@ -1,6 +1,25 @@
-# Copilot Instructions (Drone Field Test System, v1.2-stable)
+# Copilot Instructions (Drone Field Test Where to add code
+- New features in `apps/<app>/`; shared logic in `common/*`. Follow signal pattern, storage conventions, and profile-based execution. Keep network/service assumptions and paths stable.
+
+Documentation references
+- `RELEASE_v1.3_STABLE.md` - Complete v1.3 features, usage, and configuration
+- `docs/CRITICAL_LEARNINGS_v1.3.md` - **ESSENTIAL** development journey and learnings
+- `4GB_SOLUTION_FINAL_STATUS.md` - Filesystem corruption fix (FAT32 vs NTFS)
+- `NVENC_INVESTIGATION_RESULTS.md` - Why LOSSLESS is the only mode
+- `docs/WEB_DISCONNECT_FIX_v1.3.4.md` - Thread deadlock analysis
+- `docs/SHUTTER_SPEED_UI_v1.3.md` - Exposure/FPS conversion system
+- `EXTERNAL_FILES_DOCUMENTATION.md` - System dependencies
+
+If anything above is unclear or incomplete (e.g., profile list, exact storage guards, or service env), say which section you need expanded and I'll refine it.em, v1.3-stable)
 
 Purpose: Help AI agents be productive immediately in this Jetson Orin Nano + ZED 2i field-testing repo. Primary app is `apps/drone_web_controller` (WiFi AP + web UI at http://192.168.4.1:8080). Secondary tools: `smart_recorder`, `live_streamer`, `performance_test`, `zed_cli_recorder`.
+
+**🎓 CRITICAL: New to this project? Read `docs/CRITICAL_LEARNINGS_v1.3.md` FIRST!**
+- Complete development journey with ALL learnings
+- Common mistakes and how to avoid them
+- Thread deadlock fixes, filesystem issues, encoder limitations
+- Testing methodology and performance baselines
+- Essential for understanding WHY things work this way
 
 Core layout and build
 - Apps: `apps/` → binaries at `build/apps/<app>/<app>` (C++17, CMake). Build with `./scripts/build.sh`.
