@@ -58,3 +58,14 @@ core.*
 *.rpm
 *.tar.gz
 *.zip
+
+# Test binaries (keep source .cpp/.py files, ignore compiled binaries)
+tests/**/i2c_scanner
+tests/**/i2c_lcd_tester
+tests/**/simple_lcd_test
+tests/**/test_lcd
+tests/**/test_2segment_calibration
+tests/**/*_test
+!tests/**/*.cpp
+!tests/**/*.py
+!tests/**/*.sh
