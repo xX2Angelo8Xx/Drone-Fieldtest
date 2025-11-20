@@ -27,7 +27,6 @@ add_subdirectory(common/utils)
 add_subdirectory(common/networking)
 
 # Apps
-add_subdirectory(apps/data_collector)
 add_subdirectory(apps/performance_test)
 add_subdirectory(apps/smart_recorder)
 add_subdirectory(apps/zed_cli_recorder)
