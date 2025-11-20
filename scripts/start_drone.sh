@@ -60,6 +60,10 @@ echo -e "  Log file:   $LOG_FILE"
 echo -e "  Working dir: $PROJECT_ROOT"
 echo ""
 
+# CRITICAL: Do NOT update LCD here - autostart.sh already showed "Starting Script..."
+# Main application (main.cpp initialize()) will show "Ready!" when fully initialized
+# Any LCD updates here would overwrite autostart.sh messages prematurely
+
 # Start in background with nohup
 cd "$PROJECT_ROOT"
 nohup "$EXECUTABLE" > "$LOG_FILE" 2>&1 &

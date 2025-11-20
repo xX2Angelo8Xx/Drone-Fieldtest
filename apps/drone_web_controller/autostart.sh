@@ -10,31 +10,37 @@ START_SCRIPT="$PROJECT_ROOT/scripts/start_drone.sh"
 LCD_TOOL="$PROJECT_ROOT/build/tools/lcd_display_tool"
 DESKTOP_AUTOSTART_FILE="/home/angelo/Desktop/Autostart"
 
-# Show early LCD message 
-"$LCD_TOOL" "Autostart" "Starting..." 2>/dev/null || true
+# Bug #1 Fix: Show boot sequence on LCD (messages persist until next update)
+# First message: System booted
+"$LCD_TOOL" "System" "Booted!" 2>/dev/null || true
 sleep 2
 
-# Check if Desktop autostart control file exists
+# Check if Desktop autostart control file exists FIRST (no duplicate messages)
 if [ ! -f "$DESKTOP_AUTOSTART_FILE" ]; then
+    # Autostart disabled - show message and exit
+    "$LCD_TOOL" "Autostart" "Disabled" 2>/dev/null || true
+    
     echo "⏸️  AUTOSTART DISABLED: File 'Autostart' not found on Desktop"
     echo "📁 To enable autostart, create file: $DESKTOP_AUTOSTART_FILE"
     echo "💡 To disable autostart, rename or delete the Desktop file"
     echo ""
     echo "Autostart skipped. System ready for manual operation."
     
-    # Update LCD to show autostart disabled
-    "$LCD_TOOL" "Autostart" "Disabled" 2>/dev/null || true
-    
     exit 0
 fi
 
+# Autostart enabled - show progress
 echo "✅ AUTOSTART ENABLED: Found Desktop/Autostart file"
 echo "💡 To disable autostart: rename/delete Desktop/Autostart file"
 echo ""
 
-# Update LCD with autostart enabled status
+# Show autostart enabled message (persists until next update)
 "$LCD_TOOL" "Autostart" "Enabled!" 2>/dev/null || true
 sleep 2
+
+# Show "Starting Script" message (persists until main app takes over)
+"$LCD_TOOL" "Starting" "Script..." 2>/dev/null || true
+sleep 1
 
 # Check if start script exists
 if [ ! -f "$START_SCRIPT" ]; then
@@ -55,9 +61,6 @@ echo "🔧 Start script: $START_SCRIPT"
 echo "📱 Starting Drone Web Controller via start_drone.sh..."
 echo ""
 
-# Update LCD before starting
-"$LCD_TOOL" "Starting" "Drone System" 2>/dev/null || true
-sleep 2
-
-# Execute the start_drone.sh script (it handles everything)
+# Execute the start_drone.sh script (it handles LCD and everything else)
+# The "Starting Script..." message will persist until start_drone.sh updates it
 exec "$START_SCRIPT"

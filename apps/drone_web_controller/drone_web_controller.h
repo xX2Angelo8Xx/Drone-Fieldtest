@@ -10,11 +10,13 @@
 #include "storage.h"
 #include "lcd_handler.h"
 #include "safe_hotspot_manager.h"
+#include "battery_monitor.h"
 
 enum class RecorderState {
     IDLE,
     RECORDING,
     STOPPING,
+    REINITIALIZING,  // Camera reinitializing (resolution/depth mode change)
     ERROR
 };
 
@@ -74,7 +76,14 @@ public:
     // Status methods
     RecordingStatus getStatus() const;
     bool isRecording() const { return current_state_ == RecorderState::RECORDING; }
+    bool isRecordingStopComplete() const { return recording_stop_complete_; }
     bool isShutdownRequested() const { return shutdown_requested_.load(); }
+    bool isSystemShutdownRequested() const { return system_shutdown_requested_.load(); }
+    bool isBatteryShutdown() const { return battery_shutdown_flag_.load(); }
+    
+    // Battery monitoring
+    BatteryStatus getBatteryStatus() const;
+    bool isBatteryHealthy() const;
     
     // Network methods
     bool startHotspot();
@@ -103,6 +112,7 @@ private:
     std::unique_ptr<DepthDataWriter> depth_data_writer_;  // For SVO2_DEPTH_INFO mode
     std::unique_ptr<StorageHandler> storage_;
     std::unique_ptr<LCDHandler> lcd_;
+    std::unique_ptr<BatteryMonitor> battery_monitor_;
     
     // Network management - SAFE implementation (complies with NETWORK_SAFETY_POLICY.md)
     std::unique_ptr<SafeHotspotManager> hotspot_manager_;
@@ -116,6 +126,7 @@ private:
     // State management
     std::atomic<RecorderState> current_state_{RecorderState::IDLE};
     std::atomic<bool> recording_active_{false};
+    std::atomic<bool> recording_stop_complete_{true};  // Flag: stopRecording() fully completed (true when idle)
     std::atomic<bool> timer_expired_{false};  // Flag: recording timer reached duration
     std::atomic<bool> hotspot_active_{false};
     std::atomic<bool> web_server_running_{false};
@@ -135,6 +146,12 @@ private:
     int lcd_display_cycle_{0};  // Alternates between different recording info displays
     std::chrono::steady_clock::time_point last_lcd_update_;
     
+    // Bug #5 Fix: Frame caching for non-blocking livestream at high FPS
+    sl::Mat cached_livestream_frame_;                           // Last grabbed frame
+    std::chrono::steady_clock::time_point cached_frame_time_;   // Timestamp of cached frame
+    std::mutex frame_cache_mutex_;                              // Protect cache access
+    bool frame_cache_valid_{false};                             // Cache contains valid data
+    
     // Background tasks
     std::unique_ptr<std::thread> recording_monitor_thread_;
     std::unique_ptr<std::thread> web_server_thread_;
@@ -144,6 +161,10 @@ private:
     
     // Web server
     std::atomic<int> server_fd_{-1};  // Server socket file descriptor for clean shutdown
+
+    // Critical battery debounce counter (require multiple consecutive critical reads)
+    int critical_battery_counter_{0};
+    const int critical_battery_threshold_{10};
     
     // Private methods
     void recordingMonitorLoop();
@@ -162,6 +183,7 @@ private:
     // Web server helper methods
     std::string generateMainPage();
     std::string generateStatusAPI();
+    std::string generateBatteryAPI();
     std::string generateSnapshotJPEG();  // JPEG snapshot from ZED camera
     std::string generateAPIResponse(const std::string& message);
     
@@ -170,5 +192,7 @@ private:
     static void signalHandler(int signal);
     void handleShutdown();
     
-    std::atomic<bool> shutdown_requested_{false};
+    std::atomic<bool> shutdown_requested_{false};       // Request to stop application (Ctrl+C)
+    std::atomic<bool> system_shutdown_requested_{false}; // Request to power off Jetson (GUI button)
+    std::atomic<bool> battery_shutdown_flag_{false};    // Track if shutdown was caused by battery
 };

@@ -30,6 +30,15 @@ DroneWebController::DroneWebController() {
 
 DroneWebController::~DroneWebController() {
     handleShutdown();
+    
+    // Now that handleShutdown() completed, join web server thread if it exists
+    // (Safe to do here since we're not IN the web server thread - it already exited after setting flag)
+    if (web_server_thread_ && web_server_thread_->joinable()) {
+        std::cout << "[WEB_CONTROLLER] Waiting for web server thread to finish..." << std::endl;
+        web_server_thread_->join();
+        web_server_thread_.reset();
+        std::cout << "[WEB_CONTROLLER] ✓ Web server thread joined" << std::endl;
+    }
 }
 
 bool DroneWebController::initialize() {
@@ -43,8 +52,8 @@ bool DroneWebController::initialize() {
             return false;
         }
         
-        // Minimal bootup message: Just "Starting..."
-        lcd_->displayMessage("Starting...", "");
+        // REMOVED: "Starting..." message - let autostart.sh "Starting Script..." remain visible
+        // Boot sequence: System Booted → Autostart Enabled → Starting Script → (main app shows Ready!)
         
         // CRITICAL: Set depth mode to NONE for SVO2 only startup (save Jetson resources)
         // Will auto-switch to NEURAL_PLUS when user selects depth recording modes
@@ -53,7 +62,6 @@ bool DroneWebController::initialize() {
         
         // Initialize ZED recorders based on mode
         // For now, initialize the default SVO2 recorder
-        // Raw recorder will be initialized on-demand when mode is switched
         svo_recorder_ = std::make_unique<ZEDRecorder>();
         if (!svo_recorder_->init(camera_resolution_)) {  // Use member variable instead of default
             std::cout << "[WEB_CONTROLLER] ZED camera initialization failed" << std::endl;
@@ -79,12 +87,31 @@ bool DroneWebController::initialize() {
             return false;
         }
         
-        // Start system monitor thread
-        system_monitor_thread_ = std::make_unique<std::thread>(&DroneWebController::systemMonitorLoop, this);
+        // Initialize battery monitor (I2C bus 7, address 0x40)
+        std::cout << "[WEB_CONTROLLER] Initializing battery monitor..." << std::endl;
+        battery_monitor_ = std::make_unique<BatteryMonitor>(7, 0x40, 0.1, 5000);
+        if (!battery_monitor_->initialize()) {
+            std::cout << "[WEB_CONTROLLER] ⚠️ Battery monitor initialization failed - continuing without it" << std::endl;
+            battery_monitor_.reset();  // Clear the pointer so we know it's unavailable
+        } else {
+            std::cout << "[WEB_CONTROLLER] ✓ Battery monitor initialized" << std::endl;
+            // Note: Calibration is loaded automatically from config file if it exists
+        }
+        
+        // CRITICAL: DO NOT start system monitor thread yet!
+        // It updates LCD every 500ms which would wipe out autostart.sh boot messages
+        // Start it AFTER boot sequence completes (below)
+        
+        // Let autostart.sh "Starting Script..." remain visible during all initialization above
+        // (ZED init, storage init, battery init takes ~5-10 seconds)
         
         // Final bootup message: Ready with web address (keep visible before status display)
         updateLCD("Ready!", "10.42.0.1:8080");
         std::this_thread::sleep_for(std::chrono::seconds(2));
+        
+        // NOW start system monitor thread (after boot sequence complete)
+        // From this point on, systemMonitorLoop will manage LCD updates
+        system_monitor_thread_ = std::make_unique<std::thread>(&DroneWebController::systemMonitorLoop, this);
         
         std::cout << "[WEB_CONTROLLER] Initialization complete" << std::endl;
         std::cout << "[WEB_CONTROLLER] Camera: " << svo_recorder_->getModeName(camera_resolution_) << std::endl;
@@ -287,6 +314,7 @@ bool DroneWebController::startRecording() {
     }
     
     recording_active_ = true;
+    recording_stop_complete_ = false;  // Recording started - stop not yet complete
     current_state_ = RecorderState::RECORDING;
     recording_start_time_ = std::chrono::steady_clock::now();
     
@@ -363,26 +391,36 @@ bool DroneWebController::stopRecording() {
     // Show "Recording Stopped" message
     updateLCD("Recording", "Stopped");
     
+    // IMPORTANT: Keep STOPPING state visible for GUI (give GUI time to poll and display it)
+    // Without this delay, state transitions RECORDING → STOPPING → IDLE too fast for GUI to see
+    // User expects to see "Stopping..." state during cleanup, especially after timer expires
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
     // Set state to IDLE only after a delay (let "Stopped" message stay visible)
     // Use a timer that systemMonitorLoop can check
     recording_stopped_time_ = std::chrono::steady_clock::now();
     
-    std::cout << "[WEB_CONTROLLER] Recording stopped" << std::endl;
+    // CRITICAL: Transition state to IDLE *before* setting completion flag
+    // This ensures shutdown waits for complete state transition, not just partial cleanup
+    current_state_ = RecorderState::IDLE;
+    std::cout << "[WEB_CONTROLLER] State transitioned to IDLE" << std::endl;
     
-    // State will be set to IDLE by systemMonitorLoop after message is visible
+    // CRITICAL: Signal that recording stop is FULLY complete (including state transition)
+    // This flag allows shutdown routine to wait for complete cleanup without timing guesses
+    // Best practice: Use completion flags instead of arbitrary delays
+    recording_stop_complete_ = true;
+    
+    std::cout << "[WEB_CONTROLLER] Recording stopped" << std::endl;
     
     return true;
 }
 
 bool DroneWebController::shutdownSystem() {
+    // DEPRECATED: Use shutdown_requested_ flag instead
+    // This function only sets the flag - actual shutdown handled by main loop
     std::cout << std::endl << "[WEB_CONTROLLER] System shutdown requested" << std::endl;
     updateLCD("System", "Shutting Down");
-    
-    handleShutdown();
-    
-    std::cout << "[WEB_CONTROLLER] Executing system shutdown..." << std::endl;
-    system("sudo shutdown -h now");
-    
+    shutdown_requested_ = true;
     return true;
 }
 
@@ -470,10 +508,31 @@ RecordingStatus DroneWebController::getStatus() const {
 void DroneWebController::setRecordingMode(RecordingModeType mode) {
     if (recording_active_) {
         std::cerr << "[WEB_CONTROLLER] Cannot change recording mode while recording" << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            status_message_ = "Cannot change mode during recording";
+        }
+        return;
+    }
+    
+    // NEW: Block concurrent mode changes during camera reinitialization
+    if (camera_initializing_) {
+        std::cerr << "[WEB_CONTROLLER] Cannot change recording mode - camera reinitializing" << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            status_message_ = "Please wait - camera reinitializing...";
+        }
         return;
     }
     
     RecordingModeType old_mode = recording_mode_;
+    
+    // Check if mode actually changed
+    if (old_mode == mode) {
+        std::cout << "[WEB_CONTROLLER] Recording mode unchanged, skipping reinit" << std::endl;
+        return;
+    }
+    
     recording_mode_ = mode;
     
     std::cout << "[WEB_CONTROLLER] Recording mode change: ";
@@ -506,9 +565,17 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
     
     bool needs_reinit = false;
     
+    // Bug #5 Fix: Invalidate frame cache before any camera reinitialization
+    auto invalidate_cache = [this]() {
+        std::lock_guard<std::mutex> lock(frame_cache_mutex_);
+        frame_cache_valid_ = false;
+        std::cout << "[WEB_CONTROLLER] Frame cache invalidated for mode change" << std::endl;
+    };
+    
     // If switching TO RAW mode from SVO mode
     if (mode == RecordingModeType::RAW_FRAMES && svo_recorder_) {
         std::cout << "[WEB_CONTROLLER] Switching from SVO to RAW mode - reinitializing..." << std::endl;
+        invalidate_cache();  // Bug #5: Clear cache before reinit
         svo_recorder_->close();
         svo_recorder_.reset();
         needs_reinit = true;
@@ -516,6 +583,7 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
     // If switching TO SVO mode from RAW mode
     else if (mode != RecordingModeType::RAW_FRAMES && old_mode == RecordingModeType::RAW_FRAMES && raw_recorder_) {
         std::cout << "[WEB_CONTROLLER] Switching from RAW to SVO mode - reinitializing..." << std::endl;
+        invalidate_cache();  // Bug #5: Clear cache before reinit
         raw_recorder_->close();
         raw_recorder_.reset();
         needs_reinit = true;
@@ -523,6 +591,7 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
     // If switching TO SVO2 only from depth modes (need to disable depth)
     else if (mode == RecordingModeType::SVO2 && (old_mode == RecordingModeType::SVO2_DEPTH_INFO || old_mode == RecordingModeType::SVO2_DEPTH_IMAGES)) {
         std::cout << "[WEB_CONTROLLER] Switching from SVO2+Depth to SVO2 only - reinitializing without depth..." << std::endl;
+        invalidate_cache();  // Bug #5: Clear cache before reinit
         if (svo_recorder_) {
             svo_recorder_->close();
             svo_recorder_.reset();
@@ -532,6 +601,7 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
     // If switching between SVO depth modes
     else if (old_mode != mode && (mode == RecordingModeType::SVO2_DEPTH_INFO || mode == RecordingModeType::SVO2_DEPTH_IMAGES)) {
         std::cout << "[WEB_CONTROLLER] Switching SVO depth mode - reinitializing..." << std::endl;
+        invalidate_cache();  // Bug #5: Clear cache before reinit
         if (svo_recorder_) {
             svo_recorder_->close();
             svo_recorder_.reset();
@@ -541,6 +611,9 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
     
     // Reinitialize with SAVED camera_resolution_ (preserve FPS settings!)
     if (needs_reinit) {
+        camera_initializing_ = true;
+        current_state_ = RecorderState::REINITIALIZING;  // Set state for GUI visibility
+        
         std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Brief pause for hardware
         
         if (mode == RecordingModeType::RAW_FRAMES) {
@@ -578,6 +651,9 @@ void DroneWebController::setRecordingMode(RecordingModeType mode) {
         
         // Show success message longer for visibility
         std::this_thread::sleep_for(std::chrono::seconds(2));
+        
+        camera_initializing_ = false;
+        current_state_ = RecorderState::IDLE;  // Return to IDLE after reinit
     }
 }
 
@@ -589,6 +665,22 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
         return;
     }
     
+    // NEW: Block concurrent resolution changes during camera reinitialization
+    if (camera_initializing_) {
+        std::cerr << "[WEB_CONTROLLER] Cannot change resolution - camera reinitializing" << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            status_message_ = "Please wait - camera reinitializing...";
+        }
+        return;
+    }
+    
+    // Check if resolution actually changed
+    if (camera_resolution_ == mode) {
+        std::cout << "[WEB_CONTROLLER] Camera resolution unchanged, skipping reinit" << std::endl;
+        return;
+    }
+    
     // Save current exposure setting before reinit
     int current_exposure = getCameraExposure();
     
@@ -596,6 +688,7 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
     camera_resolution_ = mode;
     
     camera_initializing_ = true;
+    current_state_ = RecorderState::REINITIALIZING;  // Set state for GUI visibility
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_message_ = "Reinitializing camera with new resolution...";
@@ -605,6 +698,13 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
     
     std::cout << "[WEB_CONTROLLER] Changing camera resolution/FPS to: " 
               << svo_recorder_->getModeName(mode) << std::endl;
+    
+    // Bug #5 Fix: Invalidate frame cache before camera reinitialization
+    {
+        std::lock_guard<std::mutex> lock(frame_cache_mutex_);
+        frame_cache_valid_ = false;
+        std::cout << "[WEB_CONTROLLER] Frame cache invalidated for camera reinit" << std::endl;
+    }
     
     // Close and reinitialize camera
     if (svo_recorder_) {
@@ -648,6 +748,7 @@ void DroneWebController::setCameraResolution(RecordingMode mode) {
     }
     
     camera_initializing_ = false;
+    current_state_ = RecorderState::IDLE;  // Return to IDLE after reinit
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_message_ = "Camera reinitialized successfully";
@@ -990,7 +1091,10 @@ void DroneWebController::restartWiFiIfNeeded() {
 void DroneWebController::recordingMonitorLoop() {
     last_lcd_update_ = std::chrono::steady_clock::now();
     
-    while (recording_active_ && !shutdown_requested_) {
+    // CRITICAL: Don't check shutdown_requested_ in loop condition!
+    // Recording must complete fully before shutdown can proceed
+    // Shutdown will wait for recording_stop_complete_ flag
+    while (recording_active_) {
         // If stopping, exit loop cleanly (let "Stopping..." message stay visible)
         if (current_state_ == RecorderState::STOPPING) {
             break;  // Exit loop immediately when stopping
@@ -1102,11 +1206,20 @@ void DroneWebController::webServerLoop(int port) {
     std::cout << "[WEB_CONTROLLER] Web server listening on port " << port << std::endl;
     
     while (web_server_running_) {
-        // Check if recording timer expired (must be checked in main thread to avoid deadlock)
+        // CRITICAL: Check if recording timer expired FIRST (before blocking select)
+        // This ensures immediate response when timer expires, not up to 1 second delay
         if (timer_expired_ && recording_active_) {
-            std::cout << "[WEB_CONTROLLER] Timer expired detected, calling robust stopRecording()..." << std::endl;
+            std::cout << "[WEB_CONTROLLER] Timer expired detected, spawning stop thread..." << std::endl;
             timer_expired_ = false;  // Reset flag
-            stopRecording();  // Use robust stop routine with all cleanup
+            
+            // CRITICAL: Call stopRecording() in separate thread to avoid blocking web server!
+            // If we call stopRecording() here (web server thread), it blocks for 3-6 seconds
+            // during file closure, preventing GUI from polling status and seeing STOPPING state.
+            // Solution: Spawn detached thread that calls stopRecording(), allowing web server
+            // to continue handling /api/status requests while cleanup happens in background.
+            std::thread([this]() {
+                stopRecording();
+            }).detach();
         }
         
         fd_set read_fds;
@@ -1133,8 +1246,73 @@ void DroneWebController::webServerLoop(int port) {
 void DroneWebController::systemMonitorLoop() {
     std::cout << "[WEB_CONTROLLER] System monitor thread started" << std::endl;
     int wifi_failure_count = 0;
+    bool low_battery_warning_shown = false;
     
     while (!shutdown_requested_) {
+        // CRITICAL: Monitor battery voltage and shutdown if critical (regardless of recording state!)
+        if (battery_monitor_) {
+            BatteryStatus battery = battery_monitor_->getStatus();
+            
+            if (battery.is_critical) {
+                // Debounce: require multiple consecutive critical readings to avoid spurious shutdowns
+                critical_battery_counter_++;
+                std::cerr << "\n[WEB_CONTROLLER] ⚠️⚠️⚠️ CRITICAL BATTERY VOLTAGE detected (count=" << critical_battery_counter_ 
+                          << "/" << critical_battery_threshold_ << ") ⚠️⚠️⚠️" << std::endl;
+                std::cerr << "[WEB_CONTROLLER] Voltage: " << battery.voltage << "V (" 
+                          << battery.cell_voltage << "V/cell)" << std::endl;
+
+                if (critical_battery_counter_ < critical_battery_threshold_) {
+                    std::cerr << "[WEB_CONTROLLER] Waiting for " << (critical_battery_threshold_ - critical_battery_counter_) 
+                              << " more critical readings before emergency shutdown" << std::endl;
+                    // Show warning on LCD
+                    updateLCD("CRITICAL BATT", std::to_string(critical_battery_counter_) + "/10");
+                } else {
+                    std::cerr << "\n[WEB_CONTROLLER] ========================================" << std::endl;
+                    std::cerr << "[WEB_CONTROLLER] CRITICAL THRESHOLD REACHED!" << std::endl;
+                    std::cerr << "[WEB_CONTROLLER] INITIATING EMERGENCY SHUTDOWN" << std::endl;
+                    std::cerr << "[WEB_CONTROLLER] ========================================\n" << std::endl;
+                    
+                    updateLCD("CRITICAL BATT", "Stopping Rec...");
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+                    // Stop recording if active
+                    if (recording_active_) {
+                        std::cerr << "[WEB_CONTROLLER] Stopping active recording before shutdown..." << std::endl;
+                        stopRecording();
+                        std::cerr << "[WEB_CONTROLLER] Recording stopped due to critical battery voltage" << std::endl;
+                    }
+
+                    // Display final message on LCD (stays visible after power off)
+                    updateLCD("Battery Shutdown", battery.voltage < 14.0f ? "Empty!" : "Critical!");
+                    std::this_thread::sleep_for(std::chrono::seconds(2));  // Ensure LCD write completes + user can read
+                    
+                    // Set both flags so main loop will perform system power-off
+                    battery_shutdown_flag_ = true;       // Track that shutdown was battery-caused
+                    system_shutdown_requested_ = true;  // GUI-equivalent flag
+                    shutdown_requested_ = true;        // Ensure main exits and performs cleanup
+                    std::cerr << "[WEB_CONTROLLER] Emergency shutdown flags set (system & app)" << std::endl;
+                    std::cerr << "[WEB_CONTROLLER] System will power off in 3 seconds..." << std::endl;
+                    
+                    break;  // Exit monitor loop immediately
+                }
+            } else if (battery.is_warning && !low_battery_warning_shown) {
+                std::cout << "[WEB_CONTROLLER] ⚠️ LOW BATTERY WARNING: " << battery.voltage 
+                          << "V (" << battery.cell_voltage << "V/cell)" << std::endl;
+                low_battery_warning_shown = true;
+                critical_battery_counter_ = 0;  // Reset counter when not critical
+            } else if (!battery.is_critical) {
+                // Reset counter when battery is no longer critical
+                if (critical_battery_counter_ > 0) {
+                    std::cout << "[WEB_CONTROLLER] ✓ Battery recovered to " << battery.voltage 
+                              << "V - reset critical counter (was: " << critical_battery_counter_ << ")" << std::endl;
+                    critical_battery_counter_ = 0;
+                }
+                if (!battery.is_warning) {
+                    low_battery_warning_shown = false;  // Reset when battery is healthy again
+                }
+            }
+        }
+        
         // Monitor WiFi connection if hotspot is active (but be less aggressive)
         if (hotspot_active_) {
             if (!monitorWiFiStatus()) {
@@ -1154,21 +1332,22 @@ void DroneWebController::systemMonitorLoop() {
         // Only update LCD here when NOT recording
         if (recording_active_) {
             // Do nothing - recordingMonitorLoop handles LCD during recording
+        } else if (shutdown_requested_ || system_shutdown_requested_) {
+            // CRITICAL: Do NOT update LCD if shutdown is in progress
+            // Battery shutdown or user shutdown has already set final LCD message
+            // Overwriting it would erase the shutdown reason for the user
         } else {
             // Check if we just stopped recording (keep "Recording Stopped" visible for 3 seconds)
             auto now = std::chrono::steady_clock::now();
             auto time_since_stop = std::chrono::duration_cast<std::chrono::seconds>(
                 now - recording_stopped_time_).count();
             
-            // Transition to IDLE immediately when recording stops
-            if (current_state_ == RecorderState::STOPPING) {
-                current_state_ = RecorderState::IDLE;
-                std::cout << "[WEB_CONTROLLER] State transitioned to IDLE" << std::endl;
-            }
+            // Note: State transition to IDLE happens immediately in stopRecording() now
+            // (no longer done asynchronously here)
             
             if (time_since_stop < 3 && time_since_stop >= 0) {
                 // Keep "Recording Stopped" message visible for 3 seconds
-                // (but state is already IDLE)
+                // (state is already IDLE, just preserving LCD display)
             } else if (hotspot_active_ && web_server_running_) {
                 updateLCD("Web Controller", "10.42.0.1:8080");
             } else if (hotspot_active_) {
@@ -1178,7 +1357,7 @@ void DroneWebController::systemMonitorLoop() {
             }
         }
         
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Check battery every 500ms (5s until shutdown with 10 confirmations)
     }
     
     std::cout << "[WEB_CONTROLLER] System monitor thread stopped" << std::endl;
@@ -1278,12 +1457,24 @@ void DroneWebController::handleClientRequest(int client_socket) {
         response = generateSnapshotJPEG();
     } else if (request.find("GET /api/status") != std::string::npos) {
         response = generateStatusAPI();
+    } else if (request.find("GET /api/battery") != std::string::npos) {
+        response = generateBatteryAPI();
     } else if (request.find("POST /api/start_recording") != std::string::npos) {
         bool success = startRecording();
         response = generateAPIResponse(success ? "Recording started" : "Failed to start recording");
     } else if (request.find("POST /api/stop_recording") != std::string::npos) {
-        bool success = stopRecording();
-        response = generateAPIResponse(success ? "Recording stopped" : "Failed to stop recording");
+        // CRITICAL: Spawn separate thread for stopRecording() to avoid blocking web server
+        // stopRecording() blocks for 3-6 seconds during file closure/sync, preventing
+        // GUI from receiving status updates. By running in detached thread, web server
+        // continues handling /api/status requests, allowing GUI to see STOPPING state.
+        if (recording_active_) {
+            std::thread([this]() {
+                stopRecording();
+            }).detach();
+            response = generateAPIResponse("Recording stop initiated");
+        } else {
+            response = generateAPIResponse("No active recording to stop");
+        }
     } else if (request.find("POST /api/set_recording_mode") != std::string::npos) {
         // Parse mode from request body
         size_t mode_pos = request.find("mode=");
@@ -1431,7 +1622,17 @@ void DroneWebController::handleClientRequest(int client_socket) {
     } else if (request.find("POST /api/shutdown") != std::string::npos) {
         response = generateAPIResponse("Shutdown initiated");
         send(client_socket, response.c_str(), response.length(), 0);
-        shutdownSystem();
+        
+        // CRITICAL: Don't call shutdownSystem() from web server thread (causes deadlock)
+        // Set SYSTEM shutdown flag - this will power off the Jetson
+        std::cout << std::endl << "[WEB_CONTROLLER] System shutdown requested via GUI" << std::endl;
+        
+        // Display final message on LCD (stays visible after power off)
+        updateLCD("User Shutdown", "Please Wait...");
+        std::this_thread::sleep_for(std::chrono::seconds(1));  // Ensure LCD write completes
+        
+        system_shutdown_requested_ = true;  // Power off system
+        shutdown_requested_ = true;          // Also stop application
         return;
     } else {
         response = "HTTP/1.1 404 Not Found\r\n\r\n<h1>404 Not Found</h1>";
@@ -1482,6 +1683,7 @@ std::string DroneWebController::generateMainPage() {
            ".shutdown{background:#6c757d;color:white;box-shadow:0 2px 4px rgba(108,117,125,0.3)}"
            "button:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,0.2)}"
            "button:disabled{opacity:0.6;cursor:not-allowed;transform:none}"
+          
            "h1{color:#495057;margin-bottom:25px}"
            ".tabs{display:flex;background:#e9ecef;border-radius:8px 8px 0 0;overflow:hidden;margin:0 -25px;margin-top:-10px;padding:0}"
            ".tab{flex:1;padding:12px 8px;border:none;background:#e9ecef;color:#495057;font-size:14px;font-weight:bold;cursor:pointer;transition:all 0.3s;border-bottom:3px solid transparent}"
@@ -1539,7 +1741,7 @@ std::string DroneWebController::generateMainPage() {
            "}"
            "function updateStatus(){"
            "fetch('/api/status').then(r=>r.json()).then(data=>{"
-           "let stateText=data.state===0?'IDLE':data.state===1?'RECORDING':'STOPPING';"
+           "let stateText=data.state===0?'IDLE':data.state===1?'RECORDING':data.state===2?'STOPPING':data.state===3?'REINITIALIZING':'ERROR';"
            "document.getElementById('status').textContent=stateText;"
            "let isRecording=data.state===1;"
            "let isInitializing=data.camera_initializing;"
@@ -1651,12 +1853,49 @@ std::string DroneWebController::generateMainPage() {
            "document.getElementById('statusDiv').className='status error';"
            "document.getElementById('status').textContent='CONNECTION ERROR';"
            "});"
+           "fetch('/api/battery').then(r=>r.json()).then(bat=>{"
+           "if(bat.error){return;}"
+           "let pct=bat.battery_percentage||0;"
+           "let indicator=document.getElementById('batteryIndicator');"
+           "let color='#27ae60';"
+           "if(pct<30){color='#e74c3c';}"
+           "else if(pct<70){color='#f39c12';}"
+           "indicator.style.color=color;"
+           "indicator.textContent='🔋 '+pct+'%';"
+           "if(document.getElementById('power-tab')){"
+           "document.getElementById('batVoltage').textContent=bat.voltage.toFixed(3)+'V';"
+           "document.getElementById('batCellVoltage').textContent=bat.cell_voltage.toFixed(3)+'V';"
+           "document.getElementById('batCurrent').textContent=bat.current.toFixed(3)+'A';"
+           "document.getElementById('batPower').textContent=bat.power.toFixed(2)+'W';"
+           "document.getElementById('batEnergyWh').textContent=bat.energy_consumed_wh.toFixed(3)+'Wh';"
+           "document.getElementById('batEnergyMah').textContent=bat.energy_consumed_mah.toFixed(1)+'mAh';"
+           "document.getElementById('batPercent').textContent=pct+'%';"
+           "document.getElementById('batRuntime').textContent=bat.estimated_runtime_minutes.toFixed(1)+' min';"
+           "let statusText='Healthy';"
+           "if(bat.is_critical){statusText='🔴 CRITICAL';}"
+           "else if(bat.is_warning){statusText='⚠️ LOW';}"
+           "else if(bat.is_healthy){statusText='✓ OK';}"
+           "document.getElementById('batStatus').textContent=statusText;"
+           "}"
+           "}).catch(()=>{});"
            "}"
            "function setRecordingMode(mode){"
            "if(currentRecMode===mode)return;"
+           "document.getElementById('notification').className='notification warning show';"
+           "document.getElementById('notification').textContent='Changing recording mode, please wait...';"
+           "document.getElementById('status').textContent='INITIALIZING...';"
+           "document.getElementById('modeRadioSVO2').disabled=true;"
+           "document.getElementById('modeRadioDepthInfo').disabled=true;"
+           "document.getElementById('modeRadioDepthImages').disabled=true;"
+           "document.getElementById('modeRadioRaw').disabled=true;"
            "fetch('/api/set_recording_mode',{method:'POST',body:'mode='+mode}).then(r=>r.json()).then(data=>{"
            "console.log(data.message);"
-           "updateStatus();"
+           "setTimeout(updateStatus,500);"
+           "}).catch(err=>{"
+           "console.error('Failed to change mode:',err);"
+           "document.getElementById('notification').className='notification error show';"
+           "document.getElementById('notification').textContent='Failed to change recording mode';"
+           "setTimeout(updateStatus,1000);"
            "});"
            "}"
            "function setDepthMode(){"
@@ -1831,7 +2070,7 @@ std::string DroneWebController::generateMainPage() {
            "});"
            "</script></head><body>"
            "<div class='container'>"
-           "<h1>🚁 DRONE CONTROLLER</h1>"
+           "<h1>🚁 DRONE CONTROLLER <span id='batteryIndicator' style='float:right;font-size:0.7em;color:#666'>🔋 --%%</span></h1>"
            "<div id='notification' class='notification'></div>"
            "<div id='statusDiv' class='status idle'>Status: <span id='status'>Loading...</span></div>"
            "<div class='tabs'>"
@@ -1966,22 +2205,50 @@ std::string DroneWebController::generateMainPage() {
            "</div>"
            "<div id='power-tab' class='tab-content'>"
            "<div class='config-section'>"
-           "<h3>🔋 Battery Monitor</h3>"
-           "<div class='system-info' style='text-align:center;padding:40px 20px'>"
-           "<p style='font-size:16px;color:#6c757d'>Battery monitoring hardware not yet installed.</p>"
-           "<p style='font-size:14px;color:#888'>Future: Voltage, current, capacity, estimated runtime</p>"
+           "<h3>🔋 Battery Monitor (4S LiPo)</h3>"
+           "<div class='info-grid' style='grid-template-columns:repeat(2,1fr);gap:15px'>"
+           "<div class='info-item' style='background:#f8f9fa;padding:15px;border-radius:8px'>"
+           "<strong style='font-size:14px;color:#666'>Battery Voltage</strong>"
+           "<div style='font-size:28px;font-weight:bold;color:#2c3e50;margin:5px 0'>"
+           "<span id='batVoltage'>--</span>"
+           "</div>"
+           "<div style='font-size:12px;color:#7f8c8d'>Per cell: <span id='batCellVoltage'>--</span></div>"
+           "</div>"
+           "<div class='info-item' style='background:#f8f9fa;padding:15px;border-radius:8px'>"
+           "<strong style='font-size:14px;color:#666'>Current Draw</strong>"
+           "<div style='font-size:28px;font-weight:bold;color:#2c3e50;margin:5px 0'>"
+           "<span id='batCurrent'>--</span>"
+           "</div>"
+           "<div style='font-size:12px;color:#7f8c8d'>Power: <span id='batPower'>--</span></div>"
+           "</div>"
+           "<div class='info-item' style='background:#f8f9fa;padding:15px;border-radius:8px'>"
+           "<strong style='font-size:14px;color:#666'>Energy Consumed</strong>"
+           "<div style='font-size:20px;font-weight:bold;color:#2c3e50;margin:5px 0'>"
+           "<span id='batEnergyWh'>--</span>"
+           "</div>"
+           "<div style='font-size:12px;color:#7f8c8d'>Charge: <span id='batEnergyMah'>--</span></div>"
+           "</div>"
+           "<div class='info-item' style='background:#f8f9fa;padding:15px;border-radius:8px'>"
+           "<strong style='font-size:14px;color:#666'>Battery Remaining</strong>"
+           "<div style='font-size:28px;font-weight:bold;color:#27ae60;margin:5px 0'>"
+           "<span id='batPercent'>--</span>"
+           "</div>"
+           "<div style='font-size:12px;color:#7f8c8d'>Runtime: <span id='batRuntime'>--</span></div>"
            "</div>"
            "</div>"
+           "<div style='margin-top:20px;padding:15px;background:#ecf0f1;border-radius:8px;text-align:center'>"
+           "<strong style='font-size:16px;color:#34495e'>Battery Status: </strong>"
+           "<span id='batStatus' style='font-size:18px;font-weight:bold'>--</span>"
            "</div>"
-           "</div>"
-           "<div id='fullscreenOverlay' class='fullscreen-overlay'>"
-           "<button class='close-fullscreen' id='closeFullscreenBtn'>✕ Close</button>"
-           "<img id='fullscreenImage' class='fullscreen-img' alt='Fullscreen View'/>"
-           "</div>"
-           "</body></html>";
+           "<div class='system-info' style='margin-top:20px'>"
+           "<strong>⚠️ Critical Thresholds:</strong><br/>"
+           "Critical voltage: 14.6V (3.65V/cell) - Emergency shutdown after 5s<br/>"
+           "Warning voltage: 14.8V (3.7V/cell) - Low battery warning<br/>"
+           "Full charge: 16.8V (4.2V/cell)<br/>"
+           "<span style='font-size:11px;color:#666'>Note: Voltage drops ~0.2V under recording load (3A current draw)</span>"
+           "</div>";
 }
 
-// Helper function to extract FPS from RecordingMode
 int getCameraFPSFromMode(RecordingMode mode) {
     switch(mode) {
         case RecordingMode::HD720_60FPS: return 60;
@@ -2028,6 +2295,48 @@ std::string DroneWebController::generateStatusAPI() {
     return json.str();
 }
 
+std::string DroneWebController::generateBatteryAPI() {
+    if (!battery_monitor_) {
+        return "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\n\r\n"
+               "{\"error\":\"Battery monitor not available\"}";
+    }
+    
+    BatteryStatus battery = getBatteryStatus();
+    std::ostringstream json;
+    
+    json << "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
+         << "{\"voltage\":" << std::fixed << std::setprecision(3) << battery.voltage << ","
+         << "\"cell_voltage\":" << std::fixed << std::setprecision(3) << battery.cell_voltage << ","
+         << "\"current\":" << std::fixed << std::setprecision(3) << battery.current << ","
+         << "\"power\":" << std::fixed << std::setprecision(2) << battery.power << ","
+         << "\"energy_consumed_wh\":" << std::fixed << std::setprecision(3) << battery.energy_consumed_wh << ","
+         << "\"energy_consumed_mah\":" << std::fixed << std::setprecision(1) << battery.energy_consumed_mah << ","
+         << "\"battery_percentage\":" << battery.battery_percentage << ","
+         << "\"estimated_runtime_minutes\":" << std::fixed << std::setprecision(1) << battery.estimated_runtime_minutes << ","
+         << "\"is_critical\":" << (battery.is_critical ? "true" : "false") << ","
+         << "\"is_warning\":" << (battery.is_warning ? "true" : "false") << ","
+         << "\"is_healthy\":" << (battery.is_healthy ? "true" : "false") << ","
+         << "\"hardware_error\":" << (battery.hardware_error ? "true" : "false") << ","
+         << "\"sample_count\":" << battery.sample_count << ","
+         << "\"uptime_seconds\":" << std::fixed << std::setprecision(1) << battery.uptime_seconds << "}";
+    
+    return json.str();
+}
+
+BatteryStatus DroneWebController::getBatteryStatus() const {
+    if (battery_monitor_) {
+        return battery_monitor_->getStatus();
+    }
+    return BatteryStatus();  // Return default empty status
+}
+
+bool DroneWebController::isBatteryHealthy() const {
+    if (battery_monitor_) {
+        return battery_monitor_->isHealthy();
+    }
+    return true;  // If no battery monitor, assume healthy
+}
+
 std::string DroneWebController::generateAPIResponse(const std::string& message) {
     return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"message\":\"" + message + "\"}";
 }
@@ -2070,29 +2379,70 @@ std::string DroneWebController::generateSnapshotJPEG() {
         return "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nServer shutting down";
     }
     
-    // Grab a frame
-    sl::ERROR_CODE err = camera->grab();
-    if (err != sl::ERROR_CODE::SUCCESS) {
-        // CORRUPTED_FRAME is common with dark images or covered lens - treat as warning, not error
-        if (err == sl::ERROR_CODE::CORRUPTED_FRAME) {
-            std::cout << "[WEB_CONTROLLER] Warning: Frame may be corrupted (dark image or covered lens), continuing anyway..." << std::endl;
-            // Continue to retrieve image - it will be dark/corrupted but better than no image
-        } else {
-            std::cerr << "[WEB_CONTROLLER] Failed to grab frame: " << toString(err) << std::endl;
-            return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to grab frame";
+    // Bug #5 Fix: Smart frame caching to prevent blocking at high FPS
+    // Check if cached frame is fresh enough (< 50ms old)
+    auto now = std::chrono::steady_clock::now();
+    bool use_cached_frame = false;
+    
+    {
+        std::lock_guard<std::mutex> lock(frame_cache_mutex_);
+        if (frame_cache_valid_) {
+            auto frame_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - cached_frame_time_).count();
+            
+            // At 60 FPS, frames arrive every ~16.7ms
+            // At 100 FPS, frames arrive every 10ms
+            // Cache is valid if < 50ms old (accommodates 2-3 frames at high FPS)
+            if (frame_age_ms < 50) {
+                use_cached_frame = true;
+                std::cout << "[WEB_CONTROLLER] Using cached frame (age: " << frame_age_ms << "ms) - prevents blocking" << std::endl;
+            }
         }
     }
     
-    // Retrieve left image (even if frame was corrupted - ZED Explorer does the same)
-    sl::Mat zed_image;
-    err = camera->retrieveImage(zed_image, sl::VIEW::LEFT);
-    if (err != sl::ERROR_CODE::SUCCESS) {
-        std::cerr << "[WEB_CONTROLLER] Failed to retrieve image: " << toString(err) << std::endl;
-        return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to retrieve image";
+    sl::Mat frame_to_encode;
+    
+    if (!use_cached_frame) {
+        // Need fresh frame - grab from camera
+        // NOTE: This can block for up to 1 frame period (16.7ms @ 60fps, 10ms @ 100fps)
+        sl::ERROR_CODE err = camera->grab();
+        if (err != sl::ERROR_CODE::SUCCESS) {
+            // CORRUPTED_FRAME is common with dark images or covered lens - treat as warning, not error
+            if (err == sl::ERROR_CODE::CORRUPTED_FRAME) {
+                std::cout << "[WEB_CONTROLLER] Warning: Frame may be corrupted (dark image or covered lens), continuing anyway..." << std::endl;
+                // Continue to retrieve image - it will be dark/corrupted but better than no image
+            } else {
+                std::cerr << "[WEB_CONTROLLER] Failed to grab frame: " << toString(err) << std::endl;
+                return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to grab frame";
+            }
+        }
+        
+        // Retrieve left image (even if frame was corrupted - ZED Explorer does the same)
+        sl::Mat zed_image;
+        err = camera->retrieveImage(zed_image, sl::VIEW::LEFT);
+        if (err != sl::ERROR_CODE::SUCCESS) {
+            std::cerr << "[WEB_CONTROLLER] Failed to retrieve image: " << toString(err) << std::endl;
+            return "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to retrieve image";
+        }
+        
+        // Update cache with fresh frame
+        {
+            std::lock_guard<std::mutex> lock(frame_cache_mutex_);
+            // ZED SDK clone() requires destination Mat parameter
+            zed_image.clone(cached_livestream_frame_);  // Deep copy for thread safety
+            cached_frame_time_ = now;
+            frame_cache_valid_ = true;
+        }
+        
+        frame_to_encode = zed_image;
+    } else {
+        // Use cached frame
+        std::lock_guard<std::mutex> lock(frame_cache_mutex_);
+        // ZED SDK clone() requires destination Mat parameter
+        cached_livestream_frame_.clone(frame_to_encode);  // Clone for thread safety
     }
     
     // Convert ZED Mat to OpenCV Mat
-    cv::Mat cv_image(zed_image.getHeight(), zed_image.getWidth(), CV_8UC4, zed_image.getPtr<sl::uchar1>(sl::MEM::CPU));
+    cv::Mat cv_image(frame_to_encode.getHeight(), frame_to_encode.getWidth(), CV_8UC4, frame_to_encode.getPtr<sl::uchar1>(sl::MEM::CPU));
     cv::Mat cv_image_rgb;
     cv::cvtColor(cv_image, cv_image_rgb, cv::COLOR_BGRA2BGR);
     
@@ -2123,8 +2473,10 @@ std::string DroneWebController::generateSnapshotJPEG() {
 
 void DroneWebController::signalHandler(int signal) {
     if (instance_) {
-        std::cout << "[WEB_CONTROLLER] Received signal " << signal << ", shutting down..." << std::endl;
-        instance_->handleShutdown();
+        std::cout << "[WEB_CONTROLLER] Received signal " << signal << ", stopping application..." << std::endl;
+        // CRITICAL: Just set flag to stop application - DON'T shutdown system
+        // Ctrl+C should only exit the program gracefully, not power off Jetson
+        instance_->shutdown_requested_ = true;  // Stop app only
     }
 }
 
@@ -2147,30 +2499,53 @@ void DroneWebController::handleShutdown() {
         server_fd_ = -1;
     }
     
-    // Wait for web server thread to finish (ensures no more snapshot requests)
-    if (web_server_thread_ && web_server_thread_->joinable()) {
-        std::cout << "[WEB_CONTROLLER] Waiting for web server thread..." << std::endl;
-        web_server_thread_->join();
-        web_server_thread_.reset();
-        std::cout << "[WEB_CONTROLLER] ✓ Web server thread stopped" << std::endl;
-    }
+    // CRITICAL: DON'T join web server thread here - might be called FROM web server thread!
+    // Thread will exit naturally when it detects web_server_running_ == false and socket closed
+    // Main thread cleanup (destructor) will handle final join after this function returns
+    std::cout << "[WEB_CONTROLLER] ✓ Web server shutdown signal sent (thread will exit naturally)" << std::endl;
     
-    // STEP 3: Now safe to stop recording (no more snapshot interference)
+    // STEP 3: Stop any active recording with FULL cleanup (critical for data integrity)
+    // NOTE: If recording was already stopped by main.cpp before system shutdown, this is a no-op
+    // This ensures recordings are properly saved even if user forgets to stop before shutdown
+    // Also critical for battery monitoring - when battery is low, this ensures graceful save
     if (recording_active_) {
-        std::cout << "[WEB_CONTROLLER] Stopping active recording..." << std::endl;
-        recording_active_ = false;
-        current_state_ = RecorderState::STOPPING;
+        std::cout << "[WEB_CONTROLLER] Active recording detected - performing graceful stop..." << std::endl;
+        updateLCD("Saving", "Recording...");
         
-        // Stop appropriate recorder
-        if ((recording_mode_ == RecordingModeType::SVO2 || 
-             recording_mode_ == RecordingModeType::SVO2_DEPTH_IMAGES) && svo_recorder_) {
-            svo_recorder_->stopRecording();
-        } else if (recording_mode_ == RecordingModeType::RAW_FRAMES && raw_recorder_) {
-            raw_recorder_->stopRecording();
+        // Call the FULL stopRecording() method to ensure complete cleanup:
+        // - Stops DepthDataWriter (SVO2_DEPTH_INFO mode)
+        // - Stops depth visualization thread (SVO2_DEPTH_IMAGES mode)  
+        // - Waits for recording monitor thread to finish
+        // - Disables depth computation properly
+        // - Shows "Recording Stopped" message
+        // - Sets recording_stop_complete_ = true when done
+        stopRecording();
+        
+        // BEST PRACTICE: Wait for completion flag instead of arbitrary timing delays
+        // This is robust and adapts to actual recording cleanup time (varies by mode/filesize)
+        std::cout << "[WEB_CONTROLLER] Waiting for recording cleanup to complete..." << std::endl;
+        int wait_count = 0;
+        const int max_wait = 100;  // 10 seconds maximum (100 * 100ms)
+        while (!recording_stop_complete_ && wait_count < max_wait) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            wait_count++;
         }
         
-        current_state_ = RecorderState::IDLE;
-        std::cout << "[WEB_CONTROLLER] ✓ Recording stopped" << std::endl;
+        if (recording_stop_complete_) {
+            std::cout << "[WEB_CONTROLLER] ✓ Recording cleanup completed in " 
+                      << (wait_count * 100) << "ms" << std::endl;
+        } else {
+            std::cout << "[WEB_CONTROLLER] ⚠ Recording cleanup timeout after " 
+                      << (max_wait * 100) << "ms - proceeding anyway" << std::endl;
+        }
+        
+        // Additional filesystem sync to ensure USB buffers are flushed
+        std::cout << "[WEB_CONTROLLER] Performing filesystem sync..." << std::endl;
+        sync();  // Force kernel to flush all filesystem buffers
+        std::cout << "[WEB_CONTROLLER] ✓ Filesystem sync complete" << std::endl;
+        
+    } else {
+        std::cout << "[WEB_CONTROLLER] No active recording to stop (already stopped or never started)" << std::endl;
     }
     
     // STEP 4: Close ZED cameras (safe now - no snapshot requests can arrive)
@@ -2186,7 +2561,15 @@ void DroneWebController::handleShutdown() {
         std::cout << "[ZED] ✓ RAW recorder closed" << std::endl;
     }
     
-    // STEP 5: Teardown WiFi hotspot
+    // STEP 5: Stop battery monitor
+    if (battery_monitor_) {
+        std::cout << "[WEB_CONTROLLER] Stopping battery monitor..." << std::endl;
+        battery_monitor_->shutdown();
+        battery_monitor_.reset();
+        std::cout << "[WEB_CONTROLLER] ✓ Battery monitor stopped" << std::endl;
+    }
+    
+    // STEP 6: Teardown WiFi hotspot
     if (hotspot_active_) {
         std::cout << "[WEB_CONTROLLER] Tearing down WiFi hotspot..." << std::endl;
         teardownWiFiHotspot();
@@ -2194,7 +2577,7 @@ void DroneWebController::handleShutdown() {
         std::cout << "[WEB_CONTROLLER] ✓ Hotspot teardown complete" << std::endl;
     }
     
-    // STEP 6: Stop system monitor thread
+    // STEP 7: Stop system monitor thread
     if (system_monitor_thread_ && system_monitor_thread_->joinable()) {
         std::cout << "[WEB_CONTROLLER] Stopping system monitor..." << std::endl;
         system_monitor_thread_->join();

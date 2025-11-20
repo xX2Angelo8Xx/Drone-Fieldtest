@@ -5,9 +5,9 @@ After=graphical-session.target
 Wants=graphical-session.target
 
 [Service]
-Type=simple
-User=angelo
-Group=angelo
+Type=forking
+User=root
+Group=root
 Environment=DISPLAY=:0
 Environment=HOME=/home/angelo
 Environment=USER=angelo

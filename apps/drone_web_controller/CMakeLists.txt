@@ -13,6 +13,7 @@ add_executable(drone_web_controller
 target_include_directories(drone_web_controller PRIVATE
     ${CMAKE_SOURCE_DIR}/common/hardware/zed_camera
     ${CMAKE_SOURCE_DIR}/common/hardware/lcd_display
+    ${CMAKE_SOURCE_DIR}/common/hardware/battery
     ${CMAKE_SOURCE_DIR}/common/storage
     ${CMAKE_SOURCE_DIR}/common/utils
     ${CMAKE_SOURCE_DIR}/common/networking
@@ -22,6 +23,7 @@ target_include_directories(drone_web_controller PRIVATE
 target_link_libraries(drone_web_controller PRIVATE
     zed_camera
     lcd_display
+    battery_monitor
     storage
     safe_hotspot_manager
     Threads::Threads

@@ -11,6 +11,7 @@ link_directories("/usr/lib/aarch64-linux-gnu" "/usr/lib/aarch64-linux-gnu/nvidia
 # Projektweite Include-Pfade für einfachere Header-Einbindung
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/common/hardware/lcd_display
+    ${CMAKE_CURRENT_SOURCE_DIR}/common/hardware/battery
     ${CMAKE_CURRENT_SOURCE_DIR}/common/storage
     ${CMAKE_CURRENT_SOURCE_DIR}/common/hardware/zed_camera
     ${CMAKE_CURRENT_SOURCE_DIR}/common/utils
@@ -19,6 +20,7 @@ include_directories(
 
 # Gemeinsame Bibliotheken
 add_subdirectory(common/hardware/lcd_display)
+add_subdirectory(common/hardware/battery)
 add_subdirectory(common/hardware/zed_camera)
 add_subdirectory(common/storage)
 add_subdirectory(common/utils)

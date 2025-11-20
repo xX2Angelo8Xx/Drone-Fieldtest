@@ -18,7 +18,8 @@ bool LCDHandler::init() {
     bool success = lcd_->init();
     if (success) {
         is_initialized_ = true;
-        showStartupMessage();
+        // REMOVED: showStartupMessage() - Boot sequence controlled by autostart.sh
+        // Message flow: System Booted → Autostart Enabled → Starting Script → (main app takes over)
     }
     return success;
 }

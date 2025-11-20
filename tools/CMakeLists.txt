@@ -52,3 +52,8 @@ target_link_libraries(depth_viewer
     /usr/lib/aarch64-linux-gnu/libopencv_highgui.so.4.5.4d
     stdc++fs
 )
+
+# Add battery monitor calibration tool
+add_executable(calibrate_battery_monitor calibrate_battery_monitor.cpp)
+
+# No special libraries needed (uses I2C directly)

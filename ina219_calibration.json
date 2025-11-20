@@ -1,0 +1,19 @@
+{
+  "slope1": 0.9949567914009094,
+  "offset1": 0.2925090789794922,
+  "slope2": 0.9772617816925049,
+  "offset2": 0.5665130615234375,
+  "midpoint": 16,
+  "slope": 0.9859421849250793,
+  "offset": 0.4255205690860748,
+  "calibration_date": "2025-11-19 18:19:48 (2-segment)",
+  "raw_readings": [14.38000011444092, 15.48559856414795, 16.6112003326416],
+  "reference_voltages": [14.6, 15.7, 16.8],
+  "max_error_1segment": 0.006573677062988281,
+  "max_error_2segment": 1.239776611328125e-05,
+  "calibration_points": [
+    {"name": "Minimum (Critical)", "voltage": 14.6, "description": "3.65V per cell"},
+    {"name": "Middle (Midpoint)", "voltage": 15.7, "description": "3.925V per cell"},
+    {"name": "Maximum (Full)", "voltage": 16.8, "description": "4.2V per cell"}
+  ]
+}
