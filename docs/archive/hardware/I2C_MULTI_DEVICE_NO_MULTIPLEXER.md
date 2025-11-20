@@ -1,3 +1,5 @@
+> Note (archived): Consolidated. See `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md` for the canonical I2C guidance. See `docs/KEY_LEARNINGS.md` for rules of thumb.
+
 # I2C Multi-Device Configuration - KEIN Multiplexer Nötig!
 
 ## 🎯 WICHTIG: I2C ist ein Shared Bus!

@@ -1,3 +1,5 @@
+> Note (archived): Outcome reflected in the consolidated guide `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`.
+
 # Battery Calibration Comparison (2025-11-19)
 
 ## 📊 OLD Calibration (Hardcoded in battery_monitor.cpp)

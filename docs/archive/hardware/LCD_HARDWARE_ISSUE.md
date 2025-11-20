@@ -1,3 +1,5 @@
+> Note (archived): Hardware status and mitigations summarized in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`.
+
 LCD Hardware Failure — Field Test Notes
 
 Status: Hardware failure detected; replacement ordered.

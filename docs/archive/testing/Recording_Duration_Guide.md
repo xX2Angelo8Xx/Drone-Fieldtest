@@ -1,3 +1,5 @@
+> Hinweis (archiviert): Zusammengefasst in `docs/guides/testing/TESTING_AND_PERFORMANCE_GUIDE.md`.
+
 # 📝 AUFNAHMEZEIT ANPASSEN - COMPLETE GUIDE
 
 ## ✅ **ERFOLG**: Profile sind bereits angepasst und getestet!

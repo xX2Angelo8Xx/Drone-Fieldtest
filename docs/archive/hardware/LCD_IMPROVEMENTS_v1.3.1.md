@@ -1,3 +1,5 @@
+> Note (archived): LCD guidance is consolidated in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`.
+
 # LCD Display Final Improvements (v1.3.1)
 
 ## Date: November 17, 2025

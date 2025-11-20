@@ -1,3 +1,5 @@
+> Note (archived): For current calibration approach see battery section in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`. Summary rules in `docs/KEY_LEARNINGS.md`.
+
 # INA219 2-Segment Calibration Upgrade (v1.5.4)
 
 **Datum:** 19. November 2025  

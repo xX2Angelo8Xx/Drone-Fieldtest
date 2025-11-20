@@ -1,3 +1,5 @@
+> Note (archived): Consolidated LCD shutdown/ownership in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`.
+
 # LCD Shutdown Messages & 5-Second Emergency Response
 
 **Version:** v1.5.4  

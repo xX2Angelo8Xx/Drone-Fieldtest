@@ -1,3 +1,5 @@
+> Hinweis (archiviert): Aktuelle Kameratests sind in `docs/guides/testing/TESTING_AND_PERFORMANCE_GUIDE.md` konsolidiert.
+
 # ZED 2i Video Recording - Technische Details
 
 ## Was wird aktuell aufgezeichnet?

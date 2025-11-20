@@ -1,3 +1,5 @@
+> Note (archived): LCD rules and ownership model are captured in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`.
+
 # LCD Boot Sequence - Known Limitation (v1.5.4f)
 
 **Date:** 2025-11-19  

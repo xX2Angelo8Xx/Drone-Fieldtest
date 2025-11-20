@@ -1,3 +1,5 @@
+> Note (archived): Superseded by `docs/guides/testing/TESTING_AND_PERFORMANCE_GUIDE.md`. This file remains for historical details.
+
 # Performance Test Mode - Depth Computation
 
 ## Problem Analysis

@@ -1,3 +1,5 @@
+> Note (archived): Consolidated in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md` (battery). See `docs/KEY_LEARNINGS.md` for summary.
+
 # Battery Monitoring Integration - v1.5.5
 **Date:** November 19, 2025  
 **System:** Jetson Orin Nano + INA219 Power Monitor (I2C bus 7, address 0x40)

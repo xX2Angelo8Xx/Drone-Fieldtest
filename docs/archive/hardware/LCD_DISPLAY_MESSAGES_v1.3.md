@@ -1,3 +1,5 @@
+> Note (archived): See consolidated LCD section in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`.
+
 # LCD Display Messages - v1.3 Final
 
 ## Bootup Sequence (Optimized - 4 messages total)

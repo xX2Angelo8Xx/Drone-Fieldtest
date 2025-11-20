@@ -1,3 +1,5 @@
+> Note (archived): Shutter testing merged into `docs/guides/testing/TESTING_AND_PERFORMANCE_GUIDE.md`.
+
 # Shutter Speed Implementation - Testing Guide
 
 ## Quick Test Commands

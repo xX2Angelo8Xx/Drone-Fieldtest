@@ -1,3 +1,5 @@
+> Note (archived): Historical investigation. For current guidance, see `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`. Cross-cutting rules in `docs/KEY_LEARNINGS.md`.
+
 # I2C Bus 0 (I2C_IDA_0) Hardware Issue Investigation
 
 **Date:** November 19, 2025  

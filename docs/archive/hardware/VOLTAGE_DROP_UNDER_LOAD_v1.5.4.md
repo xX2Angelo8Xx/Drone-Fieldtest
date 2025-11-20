@@ -1,3 +1,5 @@
+> Hinweis (archiviert): Ergebnisse sind im Batterieabschnitt von `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md` zusammengefasst.
+
 # Spannungsabfall unter Last - INA219 Messverhalten
 
 **Datum:** 19. November 2025  

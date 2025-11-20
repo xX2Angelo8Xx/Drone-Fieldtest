@@ -1,3 +1,5 @@
+> Hinweis (archiviert): Konsolidierter Stand in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md` (Akkusektion). Kurzüberblick in `docs/KEY_LEARNINGS.md`.
+
 # INA219 3-Punkt Kalibrierung - Anleitung
 **Datum:** 19. November 2025  
 **System:** Jetson Orin Nano + INA219 (I2C Bus 7, Adresse 0x40)  

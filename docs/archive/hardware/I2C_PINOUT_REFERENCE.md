@@ -1,3 +1,5 @@
+> Note (archived): This document is retained for historical context. For the current, canonical hardware documentation see `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`. For cross-cutting rules, see `docs/KEY_LEARNINGS.md`.
+
 # Jetson Orin Nano I2C Pinout Reference
 
 ## 📌 I2C Port Locations

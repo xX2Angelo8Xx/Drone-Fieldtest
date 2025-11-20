@@ -1,3 +1,5 @@
+> Hinweis (archiviert): Der aktuelle Standard ist in `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md` beschrieben. Kurzüberblick: `docs/KEY_LEARNINGS.md`.
+
 # Hardcoded Calibration Values - Battery Monitor Defaults
 
 **Date:** 19. November 2025  

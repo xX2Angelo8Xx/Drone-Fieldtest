@@ -1,3 +1,5 @@
+> Note (archived): Superseded by `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md` (battery section). See `docs/KEY_LEARNINGS.md` for cross-cutting patterns.
+
 # INA219 Battery Monitor Setup Guide
 
 ## Hardware: SOLDERED INA219 Power Monitor

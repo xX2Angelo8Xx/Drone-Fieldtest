@@ -1,3 +1,5 @@
+> Note (archived): Superseded by `docs/guides/hardware/HARDWARE_INTEGRATION_GUIDE.md`. See also `docs/KEY_LEARNINGS.md` for critical rules. This file is preserved for history.
+
 # I2C GPIO Pin Mapping - Jetson Orin Nano
 
 **Date:** November 19, 2025  
