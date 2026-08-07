@@ -1,0 +1,58 @@
+name: Build DigitMatrix APK
+
+on:
+  push:
+    branches: [ chatgpt-digitmatrix-build ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install CPU PyTorch
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+      - name: Train and export MNIST camera model
+        run: python digitmatrix/train_export.py
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build debug APK
+        working-directory: digitmatrix
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Collect deliverables
+        run: |
+          mkdir -p deliverable
+          cp digitmatrix/app/build/outputs/apk/debug/app-debug.apk deliverable/DigitMatrix-debug.apk
+          cp digitmatrix/training_report.json deliverable/training_report.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DigitMatrix-apk
+          path: deliverable/
+          if-no-files-found: error
+          retention-days: 7
