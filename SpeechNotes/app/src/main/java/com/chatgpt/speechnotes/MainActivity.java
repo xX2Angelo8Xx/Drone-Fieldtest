@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
     private Button recordButton;
     private Spinner modelSpinner;
     private Switch wavSwitch;
+    private Switch aviationSwitch;
     private SharedPreferences prefs;
     private final android.os.Handler ui = new android.os.Handler();
 
@@ -135,7 +136,10 @@ public class MainActivity extends Activity {
         root.addView(sectionLabel("MODELL"));
         root.addView(space(8));
         modelSpinner = new Spinner(this);
-        String[] labels = {"Whisper Tiny · Q5_1 · ~31 MiB", "Whisper Base · Q5_1 · ~57 MiB", "Whisper Small · Q5_1 · ~181 MiB"};
+        String[] labels = {
+                "Whisper Base · Q5_1 · ~57 MiB",
+                "Whisper Large-v3-Turbo · Q5_0 · ~547 MiB"
+        };
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, labels) {
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TextView v = (TextView) super.getView(position, convertView, parent);
@@ -148,24 +152,41 @@ public class MainActivity extends Activity {
             }
         };
         modelSpinner.setAdapter(adapter);
-        modelSpinner.setSelection(prefs.getInt("model", 1));
+        int savedModel = prefs.getInt("model_v2", 0);
+        modelSpinner.setSelection(Math.max(0, Math.min(1, savedModel)));
         root.addView(modelSpinner, matchWrap());
 
         root.addView(space(14));
-        LinearLayout toggleCard = row();
-        toggleCard.setGravity(Gravity.CENTER_VERTICAL);
-        toggleCard.setPadding(dp(16), dp(10), dp(12), dp(10));
-        toggleCard.setBackground(roundRect(CARD, 16));
-        TextView wavLabel = text("WAV zusätzlich speichern\n16 kHz · Mono · PCM16", 14, TEXT, false);
-        toggleCard.addView(wavLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout aviationCard = toggleCard(
+                "Aviation Vocabulary",
+                "Optionaler Fachwort-Kontext für beide Modelle");
+        aviationSwitch = new Switch(this);
+        aviationSwitch.setChecked(prefs.getBoolean("aviation_prompt", false));
+        aviationCard.addView(aviationSwitch);
+        root.addView(aviationCard, matchWrap());
+
+        root.addView(space(10));
+        LinearLayout wavCard = toggleCard(
+                "WAV zusätzlich speichern",
+                "16 kHz · Mono · PCM16");
         wavSwitch = new Switch(this);
         wavSwitch.setChecked(prefs.getBoolean("wav", false));
-        toggleCard.addView(wavSwitch);
-        root.addView(toggleCard, matchWrap());
+        wavCard.addView(wavSwitch);
+        root.addView(wavCard, matchWrap());
         root.addView(space(22));
 
         if (RecordingService.isRecording()) applyState("recording", null);
         else if (RecordingService.isTranscribing()) applyState("transcribing", null);
+    }
+
+    private LinearLayout toggleCard(String title, String subtitle) {
+        LinearLayout card = row();
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(16), dp(10), dp(12), dp(10));
+        card.setBackground(roundRect(CARD, 16));
+        TextView label = text(title + "\n" + subtitle, 14, TEXT, false);
+        card.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return card;
     }
 
     private void showHistoryTab() {
@@ -302,11 +323,17 @@ public class MainActivity extends Activity {
 
     private void launchRecording() {
         int idx = modelSpinner.getSelectedItemPosition();
-        String model = idx == 0 ? "tiny-q5_1" : idx == 2 ? "small-q5_1" : "base-q5_1";
-        prefs.edit().putInt("model", idx).putBoolean("wav", wavSwitch.isChecked()).apply();
+        String model = idx == 1 ? "large-v3-turbo-q5_0" : "base-q5_1";
+        boolean useAviation = aviationSwitch.isChecked();
+        boolean save = wavSwitch.isChecked();
+        prefs.edit().putInt("model_v2", idx)
+                .putBoolean("wav", save)
+                .putBoolean("aviation_prompt", useAviation)
+                .apply();
         Intent i = new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_START)
                 .putExtra(RecordingService.EXTRA_MODEL, model)
-                .putExtra(RecordingService.EXTRA_SAVE_WAV, wavSwitch.isChecked());
+                .putExtra(RecordingService.EXTRA_SAVE_WAV, save)
+                .putExtra(RecordingService.EXTRA_AVIATION_PROMPT, useAviation);
         startForegroundService(i);
     }
 
@@ -322,22 +349,24 @@ public class MainActivity extends Activity {
     }
 
     private void applyState(String state, String text) {
-        if (status == null || recordButton == null || timer == null || modelSpinner == null || wavSwitch == null) return;
+        if (status == null || recordButton == null || timer == null || modelSpinner == null || wavSwitch == null || aviationSwitch == null) return;
         if ("recording".equals(state)) {
             status.setText("● AUFNAHME AKTIV"); status.setTextColor(DANGER);
             recordButton.setText("Aufnahme beenden"); recordButton.setTextColor(Color.WHITE); recordButton.setBackground(roundRect(DANGER, 18));
-            modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); ui.removeCallbacks(timerTick); ui.post(timerTick);
+            modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); aviationSwitch.setEnabled(false); ui.removeCallbacks(timerTick); ui.post(timerTick);
         } else if ("stopping".equals(state) || "transcribing".equals(state)) {
             ui.removeCallbacks(timerTick); status.setText("TRANSKRIBIERE…"); status.setTextColor(ACCENT);
             recordButton.setText("Bitte warten…"); recordButton.setEnabled(false);
+            modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); aviationSwitch.setEnabled(false);
         } else if ("done".equals(state)) {
             ui.removeCallbacks(timerTick); timer.setText("00:00"); status.setText("Fertig · im Verlauf gespeichert"); status.setTextColor(ACCENT);
             recordButton.setText("Aufnahme starten"); recordButton.setTextColor(Color.rgb(8, 23, 20)); recordButton.setBackground(roundRect(ACCENT, 18));
-            recordButton.setEnabled(true); modelSpinner.setEnabled(true); wavSwitch.setEnabled(true);
+            recordButton.setEnabled(true); modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
             if (text != null && !text.isEmpty()) Toast.makeText(this, "Transkription abgeschlossen", Toast.LENGTH_SHORT).show();
         } else if ("error".equals(state)) {
             ui.removeCallbacks(timerTick); status.setText("Fehler"); status.setTextColor(DANGER); recordButton.setEnabled(true); recordButton.setText("Erneut versuchen");
-            modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); if (text != null) Toast.makeText(this, text, Toast.LENGTH_LONG).show();
+            modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
+            if (text != null) Toast.makeText(this, text, Toast.LENGTH_LONG).show();
         }
     }
 
@@ -363,5 +392,10 @@ public class MainActivity extends Activity {
     private LinearLayout.LayoutParams weightHeight(int h) { return new LinearLayout.LayoutParams(0, h, 1f); }
     private static String formatDuration(long ms) { long sec = Math.max(0, ms / 1000); return String.format(Locale.getDefault(), "%02d:%02d", sec / 60, sec % 60); }
     private static String formatDurationCompact(long ms) { long sec = Math.max(0, ms / 1000); if (sec < 60) return sec + " s"; return (sec / 60) + "m " + (sec % 60) + "s"; }
-    private static String modelShort(String m) { if (m.startsWith("tiny")) return "Tiny Q5_1"; if (m.startsWith("small")) return "Small Q5_1"; return "Base Q5_1"; }
+    private static String modelShort(String m) {
+        if (m.startsWith("large-v3-turbo")) return "Large-v3-Turbo Q5_0";
+        if (m.startsWith("tiny")) return "Tiny Q5_1";
+        if (m.startsWith("small")) return "Small Q5_1";
+        return "Base Q5_1";
+    }
 }
