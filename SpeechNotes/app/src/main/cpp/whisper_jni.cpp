@@ -87,7 +87,8 @@ Java_com_chatgpt_speechnotes_WhisperBridge_transcribeLoadedRaw(
         jstring pcmPathJ,
         jstring languageJ,
         jstring initialPromptJ,
-        jint threadsJ) {
+        jint threadsJ,
+        jboolean noContextJ) {
     const std::string pcmPath = jstr(env, pcmPathJ);
     const std::string language = jstr(env, languageJ);
     const std::string initialPrompt = jstr(env, initialPromptJ);
@@ -118,7 +119,7 @@ Java_com_chatgpt_speechnotes_WhisperBridge_transcribeLoadedRaw(
     p.print_progress = false;
     p.print_realtime = false;
     p.print_timestamps = false;
-    p.no_context = false;
+    p.no_context = (noContextJ == JNI_TRUE);
     p.single_segment = false;
     if (!language.empty()) p.language = language.c_str();
     if (!initialPrompt.empty()) p.initial_prompt = initialPrompt.c_str();
