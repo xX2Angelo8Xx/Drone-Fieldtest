@@ -21,6 +21,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".BenchmarkActivity"
+            android:exported="false" />
+
         <service
             android:name=".RecordingService"
             android:exported="false"
