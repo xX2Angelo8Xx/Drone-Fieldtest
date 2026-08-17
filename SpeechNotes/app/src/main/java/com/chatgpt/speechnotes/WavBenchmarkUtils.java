@@ -12,6 +12,10 @@ import java.nio.charset.StandardCharsets;
 public final class WavBenchmarkUtils {
     private WavBenchmarkUtils() {}
 
+    // Keep benchmark audio safely below Whisper's 30 s chunk boundary so every
+    // configuration measures exactly one encoder pass.
+    public static final long BENCHMARK_MAX_MS = 25_000L;
+
     public static final class Info {
         public int channels;
         public int sampleRate;
@@ -72,11 +76,15 @@ public final class WavBenchmarkUtils {
             throw new IOException("Benchmark erwartet 16 kHz · Mono · PCM16");
         }
 
+        final long bytesPerSecond = 16000L * 2L;
+        final long benchmarkBytes = (BENCHMARK_MAX_MS * bytesPerSecond) / 1000L;
+        final long bytesToCopy = Math.min(info.dataSize, benchmarkBytes);
+
         try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(wav), 256 * 1024);
              BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(pcmOut), 256 * 1024)) {
             skipExact(in, info.dataOffset);
             byte[] buffer = new byte[256 * 1024];
-            long remaining = info.dataSize;
+            long remaining = bytesToCopy;
             while (remaining > 0) {
                 int want = (int) Math.min(buffer.length, remaining);
                 int n = in.read(buffer, 0, want);
@@ -85,6 +93,10 @@ public final class WavBenchmarkUtils {
                 remaining -= n;
             }
         }
+
+        // Return the effective benchmark duration, not the full source WAV duration.
+        info.dataSize = bytesToCopy;
+        info.durationMs = (bytesToCopy * 1000L) / bytesPerSecond;
         return info;
     }
 
