@@ -73,13 +73,13 @@ jobs:
           ls -lh app/build/outputs/apk/release/app-release.apk
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
           sha256sum app/build/outputs/apk/release/app-release.apk
-          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.2.1.apk
+          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.3.0.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.2.1-arm64
-          path: SpeechNotes-1.2.1.apk
+          name: SpeechNotes-v1.3.0-arm64
+          path: SpeechNotes-1.3.0.apk
           compression-level: 0
           retention-days: 14
 
@@ -87,13 +87,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete speechnotes-v1.2.1 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.2.1 \
-            SpeechNotes-1.2.1.apk#SpeechNotes-1.2.1.apk \
+          gh release delete speechnotes-v1.3.0 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.3.0 \
+            SpeechNotes-1.3.0.apk#SpeechNotes-1.3.0.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Speech Notes v1.2.1" \
-            --notes "Deterministic profiling release. Keeps a PARTIAL_WAKE_LOCK active through recording and the full local transcription so screen-off cannot suspend CPU work. Extends pinned whisper.cpp v1.9.1 timing data with Mel, native total time, per-stage total time, run counts, and per-run averages. Resident Base Q5_1 and Large-v3-Turbo Q5_0 architecture remains unchanged; no ARM/thread/Flash-Attention/Vulkan performance tuning is included yet. Transcript fade is slightly refined. Uses the persistent v1.1+ signing key for in-place upgrades."
+            --title "Speech Notes v1.3.0" \
+            --notes "Controlled German-language benchmark release. Changes Whisper language from auto to de to test whether automatic language detection is responsible for the second encoder pass. Large-v3-Turbo Q5_0, Base Q5_1, resident model context, full profiling, wake-lock behavior, thread count, CPU backend, and all other inference settings remain unchanged. Aviation Vocabulary remains optional."
 
       - name: Record build status
         if: always()
