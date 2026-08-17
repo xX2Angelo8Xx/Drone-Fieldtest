@@ -170,7 +170,7 @@ public class RecordingService extends Service {
         broadcast("transcribing", null);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         String promptLabel = aviationPrompt ? " · Aviation Prompt" : " · Pure";
-        nm.notify(NOTIFICATION_ID, buildNotification("Transkription läuft", modelLabel(model) + promptLabel, null, true));
+        nm.notify(NOTIFICATION_ID, buildNotification("Transkription läuft", modelLabel(model) + " · Deutsch" + promptLabel, null, true));
 
         final long durationMs = Math.max(0, System.currentTimeMillis() - startedWall);
         worker.execute(() -> {
@@ -185,7 +185,7 @@ public class RecordingService extends Service {
                 int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
                 String prompt = aviationPrompt ? AviationVocabulary.PROMPT : "";
                 profile = WhisperBridge.transcribeLoaded(
-                        pcmFile.getAbsolutePath(), "auto", prompt, threads);
+                        pcmFile.getAbsolutePath(), "de", prompt, threads);
                 resultText = profile.text == null ? "" : profile.text.trim();
             } catch (Throwable t) {
                 resultText = "[Transkriptionsfehler: " + t.getMessage() + "]";
