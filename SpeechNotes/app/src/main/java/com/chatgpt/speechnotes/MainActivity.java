@@ -74,7 +74,8 @@ public class MainActivity extends Activity {
 
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            applyState(intent.getStringExtra(RecordingService.EXTRA_STATE), intent.getStringExtra(RecordingService.EXTRA_TEXT));
+            applyState(intent.getStringExtra(RecordingService.EXTRA_STATE),
+                    intent.getStringExtra(RecordingService.EXTRA_TEXT));
         }
     };
 
@@ -136,7 +137,8 @@ public class MainActivity extends Activity {
         recordButton.setBackground(roundRect(ACCENT, 18));
         recordButton.setPadding(dp(18), dp(14), dp(18), dp(14));
         recordButton.setOnClickListener(v -> toggleRecording());
-        recorderCard.addView(recordButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
+        recorderCard.addView(recordButton,
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
 
         root.addView(space(18));
         root.addView(sectionLabel("MODELL"));
@@ -146,15 +148,18 @@ public class MainActivity extends Activity {
                 "Whisper Base · Q5_1 · ~57 MiB",
                 "Whisper Large-v3-Turbo · Q5_0 · ~547 MiB"
         };
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, labels) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_dropdown_item, labels) {
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TextView v = (TextView) super.getView(position, convertView, parent);
-                v.setTextColor(TEXT); v.setTextSize(15); v.setPadding(dp(16), dp(14), dp(16), dp(14));
+                v.setTextColor(TEXT); v.setTextSize(15);
+                v.setPadding(dp(16), dp(14), dp(16), dp(14));
                 v.setBackground(roundRect(CARD, 16)); return v;
             }
             @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
                 TextView v = (TextView) super.getDropDownView(position, convertView, parent);
-                v.setTextColor(TEXT); v.setBackgroundColor(CARD_2); v.setPadding(dp(16), dp(14), dp(16), dp(14)); return v;
+                v.setTextColor(TEXT); v.setBackgroundColor(CARD_2);
+                v.setPadding(dp(16), dp(14), dp(16), dp(14)); return v;
             }
         };
         modelSpinner.setAdapter(adapter);
@@ -170,7 +175,8 @@ public class MainActivity extends Activity {
         loadModelButton.setTextColor(TEXT);
         loadModelButton.setBackground(roundRect(CARD_2, 15));
         loadModelButton.setOnClickListener(v -> loadSelectedModel());
-        root.addView(loadModelButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        root.addView(loadModelButton,
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
         root.addView(space(6));
         modelLoadStatus = text("Nicht geladen", 12, MUTED, false);
         root.addView(modelLoadStatus, matchWrap());
@@ -184,7 +190,8 @@ public class MainActivity extends Activity {
         });
 
         root.addView(space(14));
-        LinearLayout aviationCard = toggleCard("Aviation Vocabulary", "Optionaler Fachwort-Kontext für beide Modelle");
+        LinearLayout aviationCard = toggleCard("Aviation Vocabulary",
+                "Optionaler Fachwort-Kontext für beide Modelle");
         aviationSwitch = new Switch(this);
         aviationSwitch.setChecked(prefs.getBoolean("aviation_prompt", false));
         aviationCard.addView(aviationSwitch);
@@ -231,7 +238,8 @@ public class MainActivity extends Activity {
         loadModelButton.setEnabled(!loaded);
         loadModelButton.setText(loaded ? "Modell geladen" : "Modell laden");
         if (loaded) {
-            modelLoadStatus.setText("Im RAM bereit · Initialisierung " + formatMsPrecise(WhisperBridge.currentModelLoadMs()));
+            modelLoadStatus.setText("Im RAM bereit · Initialisierung " +
+                    formatMsPrecise(WhisperBridge.currentModelLoadMs()));
             modelLoadStatus.setTextColor(ACCENT);
         } else {
             modelLoadStatus.setText("Vor der Aufnahme einmal laden");
@@ -259,8 +267,8 @@ public class MainActivity extends Activity {
                 ui.post(() -> {
                     modelLoading = false;
                     modelSpinner.setEnabled(true);
-                    modelLoadStatus.setText("Bereit · Datei " + formatMsPrecise(extractMs) + " · Init " +
-                            formatMsPrecise(WhisperBridge.currentModelLoadMs()));
+                    modelLoadStatus.setText("Bereit · Datei " + formatMsPrecise(extractMs) +
+                            " · Init " + formatMsPrecise(WhisperBridge.currentModelLoadMs()));
                     modelLoadStatus.setTextColor(ACCENT);
                     refreshModelState();
                 });
@@ -308,8 +316,10 @@ public class MainActivity extends Activity {
             LinearLayout card = column();
             card.setPadding(dp(16), dp(15), dp(16), dp(13));
             card.setBackground(roundRect(CARD, 18));
-            String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(e.createdAt));
-            card.addView(text(date + "  ·  " + modelShort(e.model) + "  ·  " + formatDuration(e.durationMs), 12, MUTED, false));
+            String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                    .format(new Date(e.createdAt));
+            card.addView(text(date + "  ·  " + modelShort(e.model) + "  ·  " +
+                    formatDuration(e.durationMs), 12, MUTED, false));
             card.addView(space(8));
 
             TextView body = text(e.text.isEmpty() ? "(Kein Text erkannt)" : e.text, 15, TEXT, false);
@@ -319,16 +329,17 @@ public class MainActivity extends Activity {
 
             View fade = new View(this);
             GradientDrawable fadeBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                    new int[]{Color.TRANSPARENT, CARD});
+                    new int[]{Color.argb(0, 22, 28, 36), Color.argb(205, 22, 28, 36), CARD});
             fade.setBackground(fadeBg);
-            LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(13));
-            fp.topMargin = -dp(13);
+            LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(16));
+            fp.topMargin = -dp(16);
             card.addView(fade, fp);
 
             Button expand = new Button(this);
-            expand.setAllCaps(false); expand.setText("⌄"); expand.setTextSize(22); expand.setTextColor(MUTED);
+            expand.setAllCaps(false); expand.setText("⌄"); expand.setTextSize(21); expand.setTextColor(MUTED);
             expand.setGravity(Gravity.CENTER); expand.setPadding(0, 0, 0, 0);
-            expand.setMinHeight(dp(34)); expand.setMinimumHeight(dp(34));
+            expand.setMinHeight(dp(32)); expand.setMinimumHeight(dp(32));
             expand.setBackgroundColor(Color.TRANSPARENT);
             final boolean[] open = {false};
             expand.setOnClickListener(v -> {
@@ -337,29 +348,48 @@ public class MainActivity extends Activity {
                 fade.setVisibility(open[0] ? View.GONE : View.VISIBLE);
                 expand.setText(open[0] ? "⌃" : "⌄");
             });
-            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(dp(72), dp(34));
+            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(dp(72), dp(32));
             ep.gravity = Gravity.CENTER_HORIZONTAL;
             card.addView(expand, ep);
 
-            String perf = e.wordCount + " Wörter  ·  Whisper " + formatMsPrecise(e.inferenceMs);
+            String perf = e.wordCount + " Wörter  ·  Whisper wall " + formatMsPrecise(e.inferenceMs);
             if (e.wavPath != null) perf += "  ·  WAV gespeichert";
             card.addView(text(perf, 12, MUTED, false));
-            if (e.encodeMs > 0 || e.decodeMs > 0 || e.modelLoadMs > 0) {
-                card.addView(space(4));
-                card.addView(text(
-                        "Profil: Load " + formatMsPrecise(e.modelLoadMs) +
+
+            if (e.nativeTotalMs > 0) {
+                card.addView(space(5));
+                card.addView(text("Profil: Load " + formatMsPrecise(e.modelLoadMs) +
+                        " · PCM " + formatMsPrecise(e.pcmMs) +
+                        " · Native total " + formatMsPrecise(e.nativeTotalMs) +
+                        " · Mel " + formatMsPrecise(e.melMs), 11, MUTED, false));
+                card.addView(space(3));
+                card.addView(text(stageLine("Encode", e.encodeTotalMs, e.encodeRuns, e.encodeMs) +
+                        " · " + stageLine("Decode", e.decodeTotalMs, e.decodeRuns, e.decodeMs),
+                        11, MUTED, false));
+                card.addView(space(3));
+                card.addView(text(stageLine("Sample", e.sampleTotalMs, e.sampleRuns, e.sampleMs) +
+                        " · " + stageLine("Batch", e.batchTotalMs, e.batchRuns, e.batchMs) +
+                        " · " + stageLine("Prompt", e.promptTotalMs, e.promptRuns, e.promptMs),
+                        11, MUTED, false));
+            } else if (e.encodeMs > 0 || e.decodeMs > 0 || e.modelLoadMs > 0) {
+                card.addView(space(5));
+                card.addView(text("Legacy-Profil (Ø/Run): Load " + formatMsPrecise(e.modelLoadMs) +
                         " · PCM " + formatMsPrecise(e.pcmMs) +
                         " · Encode " + formatMsPrecise(e.encodeMs) +
                         " · Decode " + formatMsPrecise(e.decodeMs) +
                         " · Batch " + formatMsPrecise(e.batchMs) +
                         " · Sample " + formatMsPrecise(e.sampleMs) +
-                        " · Prompt " + formatMsPrecise(e.promptMs),
-                        11, MUTED, false));
+                        " · Prompt " + formatMsPrecise(e.promptMs), 11, MUTED, false));
             }
+
             LinearLayout.LayoutParams cp = matchWrap(); cp.bottomMargin = dp(10);
             root.addView(card, cp);
         }
         root.addView(space(10));
+    }
+
+    private static String stageLine(String name, long totalMs, int runs, long averageMs) {
+        return name + " Σ " + formatMsPrecise(totalMs) + " / " + runs + "× / Ø " + formatMsPrecise(averageMs);
     }
 
     private LinearLayout buildPage(boolean recordSelected) {
@@ -370,11 +400,14 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(true); scroll.setBackgroundColor(BG); scroll.setClipToPadding(false);
         LinearLayout content = column();
         content.setPadding(dp(20), dp(22), dp(20), dp(22));
-        scroll.addView(content, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        screen.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        scroll.addView(content, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        screen.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         LinearLayout bottom = bottomTabs(recordSelected);
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         bp.setMargins(dp(16), dp(6), dp(16), dp(10));
         screen.addView(bottom, bp);
         setContentView(screen);
@@ -418,13 +451,13 @@ public class MainActivity extends Activity {
 
     private void toggleRecording() {
         if (RecordingService.isRecording()) {
-            startService(new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_STOP)); return;
+            startService(new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_STOP));
+            return;
         }
         if (RecordingService.isTranscribing() || modelLoading) return;
         if (!WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath())) {
             Toast.makeText(this, "Bitte zuerst Modell laden.", Toast.LENGTH_SHORT).show();
-            refreshModelState();
-            return;
+            refreshModelState(); return;
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO); return;
@@ -439,8 +472,7 @@ public class MainActivity extends Activity {
         boolean save = wavSwitch.isChecked();
         prefs.edit().putInt("model_v2", idx)
                 .putBoolean("wav", save)
-                .putBoolean("aviation_prompt", useAviation)
-                .apply();
+                .putBoolean("aviation_prompt", useAviation).apply();
         Intent i = new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_START)
                 .putExtra(RecordingService.EXTRA_MODEL, model)
                 .putExtra(RecordingService.EXTRA_SAVE_WAV, save)
@@ -450,17 +482,21 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_AUDIO && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) launchRecording();
-        else if (requestCode == REQ_AUDIO) Toast.makeText(this, "Mikrofonberechtigung wird für Diktate benötigt.", Toast.LENGTH_LONG).show();
+        if (requestCode == REQ_AUDIO && grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) launchRecording();
+        else if (requestCode == REQ_AUDIO)
+            Toast.makeText(this, "Mikrofonberechtigung wird für Diktate benötigt.", Toast.LENGTH_LONG).show();
     }
 
     private void requestNotificationPermissionIfUseful() {
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+        if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
     }
 
     private void applyState(String state, String text) {
-        if (status == null || recordButton == null || timer == null || modelSpinner == null || wavSwitch == null || aviationSwitch == null) return;
+        if (status == null || recordButton == null || timer == null || modelSpinner == null ||
+                wavSwitch == null || aviationSwitch == null) return;
         if ("recording".equals(state)) {
             status.setText("● AUFNAHME AKTIV"); status.setTextColor(DANGER);
             recordButton.setText("Aufnahme beenden"); recordButton.setEnabled(true); recordButton.setAlpha(1f);
@@ -474,42 +510,59 @@ public class MainActivity extends Activity {
             modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); aviationSwitch.setEnabled(false);
             if (loadModelButton != null) loadModelButton.setEnabled(false);
         } else if ("done".equals(state)) {
-            ui.removeCallbacks(timerTick); timer.setText("00:00"); status.setText("Fertig · im Verlauf gespeichert"); status.setTextColor(ACCENT);
-            recordButton.setText("Aufnahme starten"); recordButton.setTextColor(Color.rgb(8, 23, 20)); recordButton.setBackground(roundRect(ACCENT, 18));
+            ui.removeCallbacks(timerTick); timer.setText("00:00");
+            status.setText("Fertig · im Verlauf gespeichert"); status.setTextColor(ACCENT);
+            recordButton.setText("Aufnahme starten"); recordButton.setTextColor(Color.rgb(8, 23, 20));
+            recordButton.setBackground(roundRect(ACCENT, 18));
             modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
             refreshModelState();
-            if (text != null && !text.isEmpty()) Toast.makeText(this, "Transkription abgeschlossen", Toast.LENGTH_SHORT).show();
+            if (text != null && !text.isEmpty())
+                Toast.makeText(this, "Transkription abgeschlossen", Toast.LENGTH_SHORT).show();
         } else if ("error".equals(state)) {
             ui.removeCallbacks(timerTick); status.setText("Fehler"); status.setTextColor(DANGER);
-            recordButton.setText("Aufnahme starten"); modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
-            refreshModelState();
+            recordButton.setText("Aufnahme starten"); modelSpinner.setEnabled(true);
+            wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true); refreshModelState();
             if (text != null) Toast.makeText(this, text, Toast.LENGTH_LONG).show();
         }
     }
 
     private Button tabButton(String label, boolean selected) {
         Button b = new Button(this); b.setAllCaps(false); b.setText(label); b.setTextSize(14);
-        b.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL); b.setTextColor(selected ? TEXT : MUTED);
+        b.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+        b.setTextColor(selected ? TEXT : MUTED);
         b.setBackground(roundRect(selected ? CARD_2 : Color.TRANSPARENT, 14)); return b;
     }
 
     private LinearLayout statCell(String value, String label) {
         LinearLayout box = column(); box.setGravity(Gravity.CENTER);
-        box.addView(textCentered(value, 21, TEXT, true)); box.addView(textCentered(label, 11, MUTED, false)); return box;
+        box.addView(textCentered(value, 21, TEXT, true));
+        box.addView(textCentered(label, 11, MUTED, false)); return box;
     }
     private TextView sectionLabel(String value) { TextView v = text(value, 11, MUTED, true); v.setLetterSpacing(0.12f); return v; }
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
     private View space(int d) { View v = new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(1, dp(d))); return v; }
-    private TextView text(String value, int sp, int color, boolean bold) { TextView v = new TextView(this); v.setText(value); v.setTextSize(sp); v.setTextColor(color); v.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL); v.setLineSpacing(0, 1.12f); return v; }
-    private TextView textCentered(String value, int sp, int color, boolean bold) { TextView v = text(value, sp, color, bold); v.setGravity(Gravity.CENTER); return v; }
-    private GradientDrawable roundRect(int color, int radiusDp) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(radiusDp)); return g; }
+    private TextView text(String value, int sp, int color, boolean bold) {
+        TextView v = new TextView(this); v.setText(value); v.setTextSize(sp); v.setTextColor(color);
+        v.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL); v.setLineSpacing(0, 1.12f); return v;
+    }
+    private TextView textCentered(String value, int sp, int color, boolean bold) {
+        TextView v = text(value, sp, color, bold); v.setGravity(Gravity.CENTER); return v;
+    }
+    private GradientDrawable roundRect(int color, int radiusDp) {
+        GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(radiusDp)); return g;
+    }
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
     private LinearLayout.LayoutParams matchWrap() { return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); }
     private LinearLayout.LayoutParams weight() { return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); }
     private LinearLayout.LayoutParams weightHeight(int h) { return new LinearLayout.LayoutParams(0, h, 1f); }
-    private static String formatDuration(long ms) { long sec = Math.max(0, ms / 1000); return String.format(Locale.getDefault(), "%02d:%02d", sec / 60, sec % 60); }
-    private static String formatDurationCompact(long ms) { long sec = Math.max(0, ms / 1000); if (sec < 60) return sec + " s"; return (sec / 60) + "m " + (sec % 60) + "s"; }
+    private static String formatDuration(long ms) {
+        long sec = Math.max(0, ms / 1000); return String.format(Locale.getDefault(), "%02d:%02d", sec / 60, sec % 60);
+    }
+    private static String formatDurationCompact(long ms) {
+        long sec = Math.max(0, ms / 1000); if (sec < 60) return sec + " s";
+        return (sec / 60) + "m " + (sec % 60) + "s";
+    }
     private static String formatMsPrecise(long ms) {
         if (ms < 1000) return ms + " ms";
         if (ms < 60_000) return String.format(Locale.getDefault(), "%.1f s", ms / 1000.0);
