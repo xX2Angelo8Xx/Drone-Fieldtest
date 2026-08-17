@@ -48,6 +48,22 @@ jobs:
           echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
           echo "6fe57ddcfdd1c6b07cdcc73aaf620810ce5fc771  app/src/main/assets/models/ggml-small-q5_1.bin" | sha1sum -c -
 
+      - name: Generate deterministic prototype signing keystore
+        run: |
+          cd SpeechNotes
+          rm -f showcase-release.jks
+          keytool -genkeypair -v \
+            -keystore showcase-release.jks \
+            -storetype JKS \
+            -storepass chatgpt-showcase \
+            -keypass chatgpt-showcase \
+            -alias speechnotes \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Speech Notes ChatGPT Showcase, OU=Prototype, O=OpenAI Chat Showcase, L=Vienna, C=AT"
+          keytool -list -keystore showcase-release.jks -storepass chatgpt-showcase -alias speechnotes
+
       - name: Build signed release APK
         working-directory: SpeechNotes
         run: gradle --no-daemon :app:assembleRelease
@@ -57,6 +73,7 @@ jobs:
           cd SpeechNotes
           ls -lh app/build/outputs/apk/release/app-release.apk
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          sha256sum app/build/outputs/apk/release/app-release.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
