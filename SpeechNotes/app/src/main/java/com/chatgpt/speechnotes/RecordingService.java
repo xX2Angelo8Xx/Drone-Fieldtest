@@ -22,7 +22,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -87,6 +86,11 @@ public class RecordingService extends Service {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int bufferSize = Math.max(min, SAMPLE_RATE * 2);
         try {
+            File modelFile = ModelManager.ensureModel(this, model);
+            if (!WhisperBridge.isModelLoaded(modelFile.getAbsolutePath())) {
+                throw new IllegalStateException("Bitte das ausgewählte Modell zuerst laden.");
+            }
+
             audioRecord = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,
                     SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT, bufferSize);
@@ -163,20 +167,22 @@ public class RecordingService extends Service {
 
         final long durationMs = Math.max(0, System.currentTimeMillis() - startedWall);
         worker.execute(() -> {
-            String result;
-            long inferenceStart = SystemClock.elapsedRealtime();
+            String resultText;
+            WhisperBridge.Result profile = new WhisperBridge.Result();
+            long modelLoadMs = WhisperBridge.currentModelLoadMs();
             try {
-                File modelFile = ensureModel(model);
+                File modelFile = ModelManager.ensureModel(this, model);
+                if (!WhisperBridge.isModelLoaded(modelFile.getAbsolutePath())) {
+                    throw new IllegalStateException("Geladener Modell-Context ist nicht mehr verfügbar.");
+                }
                 int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
                 String prompt = aviationPrompt ? AviationVocabulary.PROMPT : "";
-                result = WhisperBridge.transcribePcm16(modelFile.getAbsolutePath(),
+                profile = WhisperBridge.transcribeLoaded(
                         pcmFile.getAbsolutePath(), "auto", prompt, threads);
-                if (result == null) result = "";
-                result = result.trim();
+                resultText = profile.text == null ? "" : profile.text.trim();
             } catch (Throwable t) {
-                result = "[Transkriptionsfehler: " + t.getMessage() + "]";
+                resultText = "[Transkriptionsfehler: " + t.getMessage() + "]";
             }
-            long inferenceMs = SystemClock.elapsedRealtime() - inferenceStart;
 
             String wavPath = null;
             if (saveWav) {
@@ -189,34 +195,19 @@ public class RecordingService extends Service {
                 } catch (Throwable ignored) { }
             }
 
-            int words = countWords(result);
-            new TranscriptDb(this).insert(startedWall, durationMs, inferenceMs,
-                    model, result, words, wavPath);
+            int words = countWords(resultText);
+            new TranscriptDb(this).insert(
+                    startedWall, durationMs, profile.whisperMs, modelLoadMs,
+                    profile.pcmMs, profile.encodeMs, profile.decodeMs,
+                    profile.sampleMs, profile.batchMs, profile.promptMs,
+                    model, resultText, words, wavPath);
 
             if (pcmFile != null) pcmFile.delete();
             transcribing = false;
-            broadcast("done", result);
+            broadcast("done", resultText);
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
         });
-    }
-
-    private File ensureModel(String modelName) throws IOException {
-        String assetName = "models/ggml-" + modelName + ".bin";
-        File dir = new File(getFilesDir(), "models");
-        if (!dir.exists() && !dir.mkdirs()) throw new IOException("Modellordner konnte nicht erstellt werden");
-        File dst = new File(dir, "ggml-" + modelName + ".bin");
-        if (dst.exists() && dst.length() > 10_000_000) return dst;
-
-        File tmp = new File(dir, dst.getName() + ".tmp");
-        try (InputStream in = new BufferedInputStream(getAssets().open(assetName), 1024 * 1024);
-             BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(tmp), 1024 * 1024)) {
-            byte[] buffer = new byte[1024 * 1024];
-            int n;
-            while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
-        }
-        if (!tmp.renameTo(dst)) throw new IOException("Modell konnte nicht finalisiert werden");
-        return dst;
     }
 
     private static int countWords(String text) {
