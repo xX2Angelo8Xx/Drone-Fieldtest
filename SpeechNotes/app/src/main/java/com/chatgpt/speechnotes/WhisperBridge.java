@@ -34,11 +34,19 @@ public final class WhisperBridge {
     public static native long currentModelLoadMs();
 
     private static native String transcribeLoadedRaw(
-            String pcmPath, String language, String initialPrompt, int threads);
+            String pcmPath, String language, String initialPrompt, int threads, boolean noContext);
 
     public static Result transcribeLoaded(String pcmPath, String language,
                                           String initialPrompt, int threads) {
-        String raw = transcribeLoadedRaw(pcmPath, language, initialPrompt, threads);
+        return parseResult(transcribeLoadedRaw(pcmPath, language, initialPrompt, threads, false));
+    }
+
+    public static Result transcribeLoadedBenchmark(String pcmPath, String language,
+                                                   String initialPrompt, int threads) {
+        return parseResult(transcribeLoadedRaw(pcmPath, language, initialPrompt, threads, true));
+    }
+
+    private static Result parseResult(String raw) {
         Result r = new Result();
         if (raw == null) return r;
         final String marker = "\n__SN_TEXT__\n";
