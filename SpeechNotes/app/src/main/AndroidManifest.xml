@@ -23,7 +23,9 @@
 
         <activity
             android:name=".BenchmarkActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <service
             android:name=".RecordingService"
