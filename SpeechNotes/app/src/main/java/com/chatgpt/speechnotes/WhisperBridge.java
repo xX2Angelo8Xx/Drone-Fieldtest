@@ -8,11 +8,24 @@ public final class WhisperBridge {
         public String text = "";
         public long pcmMs;
         public long whisperMs;
+        public long nativeTotalMs;
+        public long melMs;
+
         public long encodeMs;
+        public long encodeTotalMs;
+        public int encodeRuns;
         public long decodeMs;
+        public long decodeTotalMs;
+        public int decodeRuns;
         public long sampleMs;
+        public long sampleTotalMs;
+        public int sampleRuns;
         public long batchMs;
+        public long batchTotalMs;
+        public int batchRuns;
         public long promptMs;
+        public long promptTotalMs;
+        public int promptRuns;
     }
 
     public static native long loadModel(String modelPath);
@@ -41,11 +54,23 @@ public final class WhisperBridge {
             switch (kv[0]) {
                 case "pcm": r.pcmMs = v; break;
                 case "whisper": r.whisperMs = v; break;
+                case "native_total": r.nativeTotalMs = v; break;
+                case "mel": r.melMs = v; break;
                 case "encode": r.encodeMs = v; break;
+                case "encode_total": r.encodeTotalMs = v; break;
+                case "encode_n": r.encodeRuns = (int) v; break;
                 case "decode": r.decodeMs = v; break;
+                case "decode_total": r.decodeTotalMs = v; break;
+                case "decode_n": r.decodeRuns = (int) v; break;
                 case "sample": r.sampleMs = v; break;
+                case "sample_total": r.sampleTotalMs = v; break;
+                case "sample_n": r.sampleRuns = (int) v; break;
                 case "batch": r.batchMs = v; break;
+                case "batch_total": r.batchTotalMs = v; break;
+                case "batch_n": r.batchRuns = (int) v; break;
                 case "prompt": r.promptMs = v; break;
+                case "prompt_total": r.promptTotalMs = v; break;
+                case "prompt_n": r.promptRuns = (int) v; break;
             }
         }
         return r;
