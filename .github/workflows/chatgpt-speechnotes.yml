@@ -1,0 +1,67 @@
+name: Build Speech Notes APK
+
+on:
+  push:
+    branches: [ chatgpt-whisper-dictation-v1 ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt-whisper-dictation-v1
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Fetch pinned whisper.cpp
+        run: |
+          cd SpeechNotes
+          rm -rf app/src/main/cpp/whispercpp
+          git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp app/src/main/cpp/whispercpp
+
+      - name: Download bundled Q5_1 models
+        run: |
+          cd SpeechNotes
+          mkdir -p app/src/main/assets/models
+          curl -fL --retry 4 -o app/src/main/assets/models/ggml-tiny-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin
+          curl -fL --retry 4 -o app/src/main/assets/models/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+          curl -fL --retry 4 -o app/src/main/assets/models/ggml-small-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
+          echo "2827a03e495b1ed3048ef28a6a4620537db4ee51  app/src/main/assets/models/ggml-tiny-q5_1.bin" | sha1sum -c -
+          echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
+          echo "6fe57ddcfdd1c6b07cdcc73aaf620810ce5fc771  app/src/main/assets/models/ggml-small-q5_1.bin" | sha1sum -c -
+
+      - name: Build signed release APK
+        working-directory: SpeechNotes
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Inspect APK
+        run: |
+          cd SpeechNotes
+          ls -lh app/build/outputs/apk/release/app-release.apk
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeechNotes-v1.0.0-arm64
+          path: SpeechNotes/app/build/outputs/apk/release/app-release.apk
+          compression-level: 0
+          retention-days: 14
