@@ -35,6 +35,7 @@ public class RecordingService extends Service {
     public static final String EXTRA_TEXT = "text";
     public static final String EXTRA_MODEL = "model";
     public static final String EXTRA_SAVE_WAV = "save_wav";
+    public static final String EXTRA_AVIATION_PROMPT = "aviation_prompt";
 
     private static final String CHANNEL_ID = "speech_notes_recording";
     private static final int NOTIFICATION_ID = 41;
@@ -51,6 +52,7 @@ public class RecordingService extends Service {
     private Thread recordThread;
     private String model = "base-q5_1";
     private boolean saveWav = false;
+    private boolean aviationPrompt = false;
     private long startedWall;
     private PowerManager.WakeLock wakeLock;
 
@@ -74,6 +76,7 @@ public class RecordingService extends Service {
             model = intent.getStringExtra(EXTRA_MODEL);
             if (model == null) model = "base-q5_1";
             saveWav = intent.getBooleanExtra(EXTRA_SAVE_WAV, false);
+            aviationPrompt = intent.getBooleanExtra(EXTRA_AVIATION_PROMPT, false);
             startRecording();
         }
         return START_NOT_STICKY;
@@ -155,7 +158,8 @@ public class RecordingService extends Service {
         transcribing = true;
         broadcast("transcribing", null);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        nm.notify(NOTIFICATION_ID, buildNotification("Transkription läuft", modelLabel(model), null, false));
+        String promptLabel = aviationPrompt ? " · Aviation Prompt" : " · Pure";
+        nm.notify(NOTIFICATION_ID, buildNotification("Transkription läuft", modelLabel(model) + promptLabel, null, false));
 
         final long durationMs = Math.max(0, System.currentTimeMillis() - startedWall);
         worker.execute(() -> {
@@ -164,8 +168,9 @@ public class RecordingService extends Service {
             try {
                 File modelFile = ensureModel(model);
                 int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
+                String prompt = aviationPrompt ? AviationVocabulary.PROMPT : "";
                 result = WhisperBridge.transcribePcm16(modelFile.getAbsolutePath(),
-                        pcmFile.getAbsolutePath(), "auto", threads);
+                        pcmFile.getAbsolutePath(), "auto", prompt, threads);
                 if (result == null) result = "";
                 result = result.trim();
             } catch (Throwable t) {
@@ -267,8 +272,7 @@ public class RecordingService extends Service {
     }
 
     private static String modelLabel(String m) {
-        if (m.startsWith("tiny")) return "Whisper Tiny Q5_1";
-        if (m.startsWith("small")) return "Whisper Small Q5_1";
+        if (m.startsWith("large-v3-turbo")) return "Whisper Large-v3-Turbo Q5_0";
         return "Whisper Base Q5_1";
     }
 
