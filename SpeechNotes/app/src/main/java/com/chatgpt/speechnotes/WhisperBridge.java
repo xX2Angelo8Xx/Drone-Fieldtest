@@ -11,5 +11,6 @@ public final class WhisperBridge {
             String modelPath,
             String pcmPath,
             String language,
+            String initialPrompt,
             int threads);
 }
