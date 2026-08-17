@@ -114,10 +114,7 @@ public class RecordingService extends Service {
                 startForeground(NOTIFICATION_ID, notification);
             }
 
-            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SpeechNotes:Recording");
-            wakeLock.acquire(6L * 60L * 60L * 1000L);
-
+            acquireWakeLock();
             audioRecord.startRecording();
             broadcast("recording", null);
 
@@ -126,11 +123,20 @@ public class RecordingService extends Service {
             recordThread.start();
         } catch (Throwable t) {
             recording = false;
-            releaseAudio();
+            releaseRecorder();
+            releaseWakeLock();
             broadcast("error", t.getMessage());
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
         }
+    }
+
+    private void acquireWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) return;
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SpeechNotes:RecordAndTranscribe");
+        wakeLock.setReferenceCounted(false);
+        wakeLock.acquire(6L * 60L * 60L * 1000L);
     }
 
     private void captureLoop(int bufferSize) {
@@ -146,7 +152,7 @@ public class RecordingService extends Service {
         } finally {
             try { audioRecord.stop(); } catch (Throwable ignored) { }
             recording = false;
-            releaseAudio();
+            releaseRecorder();
             beginTranscription();
         }
     }
@@ -160,10 +166,11 @@ public class RecordingService extends Service {
 
     private void beginTranscription() {
         transcribing = true;
+        acquireWakeLock();
         broadcast("transcribing", null);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         String promptLabel = aviationPrompt ? " · Aviation Prompt" : " · Pure";
-        nm.notify(NOTIFICATION_ID, buildNotification("Transkription läuft", modelLabel(model) + promptLabel, null, false));
+        nm.notify(NOTIFICATION_ID, buildNotification("Transkription läuft", modelLabel(model) + promptLabel, null, true));
 
         final long durationMs = Math.max(0, System.currentTimeMillis() - startedWall);
         worker.execute(() -> {
@@ -195,18 +202,19 @@ public class RecordingService extends Service {
                 } catch (Throwable ignored) { }
             }
 
-            int words = countWords(resultText);
-            new TranscriptDb(this).insert(
-                    startedWall, durationMs, profile.whisperMs, modelLoadMs,
-                    profile.pcmMs, profile.encodeMs, profile.decodeMs,
-                    profile.sampleMs, profile.batchMs, profile.promptMs,
-                    model, resultText, words, wavPath);
-
-            if (pcmFile != null) pcmFile.delete();
-            transcribing = false;
-            broadcast("done", resultText);
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            try {
+                int words = countWords(resultText);
+                new TranscriptDb(this).insert(
+                        startedWall, durationMs, profile, modelLoadMs,
+                        model, resultText, words, wavPath);
+                if (pcmFile != null) pcmFile.delete();
+                transcribing = false;
+                broadcast("done", resultText);
+            } finally {
+                releaseWakeLock();
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+            }
         });
     }
 
@@ -215,11 +223,14 @@ public class RecordingService extends Service {
         return t.isEmpty() ? 0 : t.split("\\s+").length;
     }
 
-    private void releaseAudio() {
+    private void releaseRecorder() {
         if (audioRecord != null) {
             try { audioRecord.release(); } catch (Throwable ignored) { }
             audioRecord = null;
         }
+    }
+
+    private void releaseWakeLock() {
         if (wakeLock != null && wakeLock.isHeld()) {
             try { wakeLock.release(); } catch (Throwable ignored) { }
         }
@@ -237,7 +248,7 @@ public class RecordingService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
                 "Aufnahme", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Zeigt eine laufende Sprachaufnahme an");
+        channel.setDescription("Zeigt Aufnahme und lokale Transkription an");
         channel.setSound(null, null);
         nm.createNotificationChannel(channel);
     }
@@ -279,7 +290,8 @@ public class RecordingService extends Service {
                 try { recordThread.join(1200); } catch (InterruptedException ignored) { }
             }
         }
-        releaseAudio();
+        releaseRecorder();
+        if (!transcribing) releaseWakeLock();
         worker.shutdown();
         super.onDestroy();
     }
