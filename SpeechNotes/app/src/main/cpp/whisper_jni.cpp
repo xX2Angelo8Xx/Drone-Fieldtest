@@ -137,20 +137,46 @@ Java_com_chatgpt_speechnotes_WhisperBridge_transcribeLoadedRaw(
     }
 
     whisper_timings *t = whisper_get_timings(g_ctx);
-    const long long encodeMs = t ? (long long) t->encode_ms : 0;
-    const long long decodeMs = t ? (long long) t->decode_ms : 0;
-    const long long sampleMs = t ? (long long) t->sample_ms : 0;
-    const long long batchMs  = t ? (long long) t->batchd_ms : 0;
-    const long long promptMs = t ? (long long) t->prompt_ms : 0;
+    const long long melMs         = t ? (long long) t->mel_ms : 0;
+    const long long nativeTotalMs = t ? (long long) t->total_ms : 0;
+
+    const long long encodeMs      = t ? (long long) t->encode_ms : 0;
+    const long long encodeTotalMs = t ? (long long) t->encode_total_ms : 0;
+    const long long encodeN       = t ? (long long) t->encode_n : 0;
+    const long long decodeMs      = t ? (long long) t->decode_ms : 0;
+    const long long decodeTotalMs = t ? (long long) t->decode_total_ms : 0;
+    const long long decodeN       = t ? (long long) t->decode_n : 0;
+    const long long sampleMs      = t ? (long long) t->sample_ms : 0;
+    const long long sampleTotalMs = t ? (long long) t->sample_total_ms : 0;
+    const long long sampleN       = t ? (long long) t->sample_n : 0;
+    const long long batchMs       = t ? (long long) t->batchd_ms : 0;
+    const long long batchTotalMs  = t ? (long long) t->batchd_total_ms : 0;
+    const long long batchN        = t ? (long long) t->batchd_n : 0;
+    const long long promptMs      = t ? (long long) t->prompt_ms : 0;
+    const long long promptTotalMs = t ? (long long) t->prompt_total_ms : 0;
+    const long long promptN       = t ? (long long) t->prompt_n : 0;
 
     std::ostringstream out;
     out << "pcm=" << pcmMs
         << ";whisper=" << whisperMs
+        << ";native_total=" << nativeTotalMs
+        << ";mel=" << melMs
         << ";encode=" << encodeMs
+        << ";encode_total=" << encodeTotalMs
+        << ";encode_n=" << encodeN
         << ";decode=" << decodeMs
+        << ";decode_total=" << decodeTotalMs
+        << ";decode_n=" << decodeN
         << ";sample=" << sampleMs
+        << ";sample_total=" << sampleTotalMs
+        << ";sample_n=" << sampleN
         << ";batch=" << batchMs
+        << ";batch_total=" << batchTotalMs
+        << ";batch_n=" << batchN
         << ";prompt=" << promptMs
+        << ";prompt_total=" << promptTotalMs
+        << ";prompt_n=" << promptN
         << "\n__SN_TEXT__\n" << text;
+    delete t;
     return env->NewStringUTF(out.str().c_str());
 }
