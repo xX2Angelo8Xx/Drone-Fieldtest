@@ -3,14 +3,15 @@ package com.chatgpt.speechnotes;
 import android.Manifest;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
-import android.content.ClipboardManager;
 import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
@@ -19,6 +20,7 @@ import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -56,7 +58,7 @@ public class MainActivity extends Activity {
 
     private final Runnable timerTick = new Runnable() {
         @Override public void run() {
-            if (RecordingService.isRecording()) {
+            if (RecordingService.isRecording() && timer != null) {
                 long elapsed = SystemClock.elapsedRealtime() - RecordingService.getStartedElapsed();
                 timer.setText(formatDuration(elapsed));
                 ui.postDelayed(this, 250);
@@ -66,15 +68,15 @@ public class MainActivity extends Activity {
 
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            String state = intent.getStringExtra(RecordingService.EXTRA_STATE);
-            String text = intent.getStringExtra(RecordingService.EXTRA_TEXT);
-            applyState(state, text);
+            applyState(intent.getStringExtra(RecordingService.EXTRA_STATE), intent.getStringExtra(RecordingService.EXTRA_TEXT));
         }
     };
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
         showRecordTab();
         requestNotificationPermissionIfUseful();
     }
@@ -95,13 +97,11 @@ public class MainActivity extends Activity {
     }
 
     private void showRecordTab() {
-        root = baseRoot();
-
-        TextView title = text("Speech Notes", 29, TEXT, true);
-        TextView subtitle = text("Lokale Whisper-Diktate · vollständig offline", 14, MUTED, false);
-        root.addView(title);
+        ui.removeCallbacks(timerTick);
+        root = buildPage(true);
+        root.addView(text("Speech Notes", 29, TEXT, true));
         root.addView(space(4));
-        root.addView(subtitle);
+        root.addView(text("Lokale Whisper-Diktate · vollständig offline", 14, MUTED, false));
         root.addView(space(22));
 
         LinearLayout recorderCard = column();
@@ -129,26 +129,22 @@ public class MainActivity extends Activity {
         recordButton.setBackground(roundRect(ACCENT, 18));
         recordButton.setPadding(dp(18), dp(14), dp(18), dp(14));
         recordButton.setOnClickListener(v -> toggleRecording());
-        recorderCard.addView(recordButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
+        recorderCard.addView(recordButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
 
         root.addView(space(18));
         root.addView(sectionLabel("MODELL"));
         root.addView(space(8));
-
         modelSpinner = new Spinner(this);
         String[] labels = {"Whisper Tiny · Q5_1 · ~31 MiB", "Whisper Base · Q5_1 · ~57 MiB", "Whisper Small · Q5_1 · ~181 MiB"};
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, labels) {
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TextView v = (TextView) super.getView(position, convertView, parent);
                 v.setTextColor(TEXT); v.setTextSize(15); v.setPadding(dp(16), dp(14), dp(16), dp(14));
-                v.setBackground(roundRect(CARD, 16));
-                return v;
+                v.setBackground(roundRect(CARD, 16)); return v;
             }
             @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
                 TextView v = (TextView) super.getDropDownView(position, convertView, parent);
-                v.setTextColor(TEXT); v.setBackgroundColor(CARD_2); v.setPadding(dp(16), dp(14), dp(16), dp(14));
-                return v;
+                v.setTextColor(TEXT); v.setBackgroundColor(CARD_2); v.setPadding(dp(16), dp(14), dp(16), dp(14)); return v;
             }
         };
         modelSpinner.setAdapter(adapter);
@@ -161,15 +157,12 @@ public class MainActivity extends Activity {
         toggleCard.setPadding(dp(16), dp(10), dp(12), dp(10));
         toggleCard.setBackground(roundRect(CARD, 16));
         TextView wavLabel = text("WAV zusätzlich speichern\n16 kHz · Mono · PCM16", 14, TEXT, false);
-        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        toggleCard.addView(wavLabel, wl);
+        toggleCard.addView(wavLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         wavSwitch = new Switch(this);
         wavSwitch.setChecked(prefs.getBoolean("wav", false));
         toggleCard.addView(wavSwitch);
         root.addView(toggleCard, matchWrap());
-
-        root.addView(space(24));
-        root.addView(bottomTabs(true));
+        root.addView(space(22));
 
         if (RecordingService.isRecording()) applyState("recording", null);
         else if (RecordingService.isTranscribing()) applyState("transcribing", null);
@@ -177,10 +170,10 @@ public class MainActivity extends Activity {
 
     private void showHistoryTab() {
         ui.removeCallbacks(timerTick);
-        root = baseRoot();
+        root = buildPage(false);
         root.addView(text("Verlauf", 29, TEXT, true));
         root.addView(space(4));
-        root.addView(text("Tippe auf ein Diktat, um den Text zu kopieren.", 14, MUTED, false));
+        root.addView(text("Text antippen = kopieren · Pfeil = vollständig anzeigen", 14, MUTED, false));
         root.addView(space(18));
 
         TranscriptDb db = new TranscriptDb(this);
@@ -197,129 +190,83 @@ public class MainActivity extends Activity {
         List<TranscriptDb.Entry> entries = db.list();
         if (entries.isEmpty()) {
             TextView empty = text("Noch keine Transkriptionen.", 16, MUTED, false);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(50), 0, dp(50));
+            empty.setGravity(Gravity.CENTER); empty.setPadding(0, dp(50), 0, dp(50));
             root.addView(empty, matchWrap());
-        } else {
-            for (TranscriptDb.Entry e : entries) {
-                LinearLayout card = column();
-                card.setPadding(dp(16), dp(15), dp(16), dp(15));
-                card.setBackground(roundRect(CARD, 18));
-                String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(e.createdAt));
-                TextView meta = text(date + "  ·  " + modelShort(e.model) + "  ·  " + formatDuration(e.durationMs), 12, MUTED, false);
-                card.addView(meta);
-                card.addView(space(8));
-                TextView body = text(e.text.isEmpty() ? "(Kein Text erkannt)" : e.text, 15, TEXT, false);
-                body.setMaxLines(7);
-                card.addView(body);
-                card.addView(space(9));
-                String perf = e.wordCount + " Wörter  ·  Inferenz " + formatDurationCompact(e.inferenceMs);
-                if (e.wavPath != null) perf += "  ·  WAV gespeichert";
-                card.addView(text(perf, 12, MUTED, false));
-                card.setOnClickListener(v -> {
-                    ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    cm.setPrimaryClip(ClipData.newPlainText("Speech Notes", e.text));
-                    Toast.makeText(this, "Text kopiert", Toast.LENGTH_SHORT).show();
-                });
-                LinearLayout.LayoutParams cp = matchWrap();
-                cp.bottomMargin = dp(10);
-                root.addView(card, cp);
-            }
-        }
-
-        root.addView(space(14));
-        root.addView(bottomTabs(false));
-    }
-
-    private void toggleRecording() {
-        if (RecordingService.isRecording()) {
-            startService(new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_STOP));
             return;
         }
-        if (RecordingService.isTranscribing()) return;
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO);
-            return;
+
+        for (TranscriptDb.Entry e : entries) {
+            LinearLayout card = column();
+            card.setPadding(dp(16), dp(15), dp(12), dp(15));
+            card.setBackground(roundRect(CARD, 18));
+            String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(e.createdAt));
+            card.addView(text(date + "  ·  " + modelShort(e.model) + "  ·  " + formatDuration(e.durationMs), 12, MUTED, false));
+            card.addView(space(8));
+
+            LinearLayout textRow = row();
+            textRow.setGravity(Gravity.TOP);
+            TextView body = text(e.text.isEmpty() ? "(Kein Text erkannt)" : e.text, 15, TEXT, false);
+            body.setMaxLines(5);
+            body.setPadding(0, 0, dp(8), 0);
+            body.setOnClickListener(v -> copyText(e.text));
+            textRow.addView(body, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            Button expand = new Button(this);
+            expand.setAllCaps(false); expand.setText("⌄"); expand.setTextSize(22); expand.setTextColor(MUTED);
+            expand.setGravity(Gravity.CENTER); expand.setPadding(0, 0, 0, 0);
+            expand.setMinWidth(dp(42)); expand.setMinimumWidth(dp(42)); expand.setMinHeight(dp(42)); expand.setMinimumHeight(dp(42));
+            expand.setBackground(roundRect(CARD_2, 12));
+            final boolean[] open = {false};
+            expand.setOnClickListener(v -> {
+                open[0] = !open[0];
+                body.setMaxLines(open[0] ? Integer.MAX_VALUE : 5);
+                expand.setText(open[0] ? "⌃" : "⌄");
+            });
+            textRow.addView(expand, new LinearLayout.LayoutParams(dp(42), dp(42)));
+            card.addView(textRow, matchWrap());
+            card.addView(space(9));
+
+            String perf = e.wordCount + " Wörter  ·  Inferenz " + formatDurationCompact(e.inferenceMs);
+            if (e.wavPath != null) perf += "  ·  WAV gespeichert";
+            card.addView(text(perf, 12, MUTED, false));
+            LinearLayout.LayoutParams cp = matchWrap(); cp.bottomMargin = dp(10);
+            root.addView(card, cp);
         }
-        launchRecording();
+        root.addView(space(10));
     }
 
-    private void launchRecording() {
-        int idx = modelSpinner.getSelectedItemPosition();
-        String model = idx == 0 ? "tiny-q5_1" : idx == 2 ? "small-q5_1" : "base-q5_1";
-        prefs.edit().putInt("model", idx).putBoolean("wav", wavSwitch.isChecked()).apply();
-        Intent i = new Intent(this, RecordingService.class)
-                .setAction(RecordingService.ACTION_START)
-                .putExtra(RecordingService.EXTRA_MODEL, model)
-                .putExtra(RecordingService.EXTRA_SAVE_WAV, wavSwitch.isChecked());
-        startForegroundService(i);
-    }
+    private LinearLayout buildPage(boolean recordSelected) {
+        LinearLayout screen = column();
+        screen.setBackgroundColor(BG);
 
-    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_AUDIO && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            launchRecording();
-        } else if (requestCode == REQ_AUDIO) {
-            Toast.makeText(this, "Mikrofonberechtigung wird für Diktate benötigt.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void requestNotificationPermissionIfUseful() {
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
-        }
-    }
-
-    private void applyState(String state, String text) {
-        if (status == null || recordButton == null || timer == null) return;
-        if ("recording".equals(state)) {
-            status.setText("● AUFNAHME AKTIV");
-            status.setTextColor(DANGER);
-            recordButton.setText("Aufnahme beenden");
-            recordButton.setTextColor(Color.WHITE);
-            recordButton.setBackground(roundRect(DANGER, 18));
-            modelSpinner.setEnabled(false);
-            wavSwitch.setEnabled(false);
-            ui.removeCallbacks(timerTick);
-            ui.post(timerTick);
-        } else if ("stopping".equals(state) || "transcribing".equals(state)) {
-            ui.removeCallbacks(timerTick);
-            status.setText("TRANSKRIBIERE…");
-            status.setTextColor(ACCENT);
-            recordButton.setText("Bitte warten…");
-            recordButton.setEnabled(false);
-        } else if ("done".equals(state)) {
-            ui.removeCallbacks(timerTick);
-            timer.setText("00:00");
-            status.setText("Fertig · im Verlauf gespeichert");
-            status.setTextColor(ACCENT);
-            recordButton.setText("Aufnahme starten");
-            recordButton.setTextColor(Color.rgb(8, 23, 20));
-            recordButton.setBackground(roundRect(ACCENT, 18));
-            recordButton.setEnabled(true);
-            modelSpinner.setEnabled(true);
-            wavSwitch.setEnabled(true);
-            if (text != null && !text.isEmpty()) Toast.makeText(this, "Transkription abgeschlossen", Toast.LENGTH_SHORT).show();
-        } else if ("error".equals(state)) {
-            ui.removeCallbacks(timerTick);
-            status.setText("Fehler");
-            status.setTextColor(DANGER);
-            recordButton.setEnabled(true);
-            recordButton.setText("Erneut versuchen");
-            modelSpinner.setEnabled(true);
-            wavSwitch.setEnabled(true);
-            if (text != null) Toast.makeText(this, text, Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private LinearLayout baseRoot() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
+        scroll.setFillViewport(true); scroll.setBackgroundColor(BG); scroll.setClipToPadding(false);
         LinearLayout content = column();
-        content.setPadding(dp(20), dp(24), dp(20), dp(26));
+        content.setPadding(dp(20), dp(22), dp(20), dp(22));
         scroll.addView(content, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroll);
+        screen.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout bottom = bottomTabs(recordSelected);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bp.setMargins(dp(16), dp(6), dp(16), dp(10));
+        screen.addView(bottom, bp);
+        setContentView(screen);
+
+        screen.setOnApplyWindowInsetsListener((v, insets) -> {
+            int top; int bottomInset;
+            if (Build.VERSION.SDK_INT >= 30) {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                top = bars.top; bottomInset = bars.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop(); bottomInset = insets.getSystemWindowInsetBottom();
+            }
+            screen.setPadding(0, top, 0, 0);
+            LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) bottom.getLayoutParams();
+            p.setMargins(dp(16), dp(6), dp(16), dp(10) + bottomInset);
+            bottom.setLayoutParams(p);
+            return insets;
+        });
+        screen.requestApplyInsets();
         return content;
     }
 
@@ -336,67 +283,85 @@ public class MainActivity extends Activity {
         return bar;
     }
 
+    private void copyText(String value) {
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        cm.setPrimaryClip(ClipData.newPlainText("Speech Notes", value));
+        Toast.makeText(this, "Text kopiert", Toast.LENGTH_SHORT).show();
+    }
+
+    private void toggleRecording() {
+        if (RecordingService.isRecording()) {
+            startService(new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_STOP)); return;
+        }
+        if (RecordingService.isTranscribing()) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO); return;
+        }
+        launchRecording();
+    }
+
+    private void launchRecording() {
+        int idx = modelSpinner.getSelectedItemPosition();
+        String model = idx == 0 ? "tiny-q5_1" : idx == 2 ? "small-q5_1" : "base-q5_1";
+        prefs.edit().putInt("model", idx).putBoolean("wav", wavSwitch.isChecked()).apply();
+        Intent i = new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_START)
+                .putExtra(RecordingService.EXTRA_MODEL, model)
+                .putExtra(RecordingService.EXTRA_SAVE_WAV, wavSwitch.isChecked());
+        startForegroundService(i);
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_AUDIO && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) launchRecording();
+        else if (requestCode == REQ_AUDIO) Toast.makeText(this, "Mikrofonberechtigung wird für Diktate benötigt.", Toast.LENGTH_LONG).show();
+    }
+
+    private void requestNotificationPermissionIfUseful() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
+    }
+
+    private void applyState(String state, String text) {
+        if (status == null || recordButton == null || timer == null || modelSpinner == null || wavSwitch == null) return;
+        if ("recording".equals(state)) {
+            status.setText("● AUFNAHME AKTIV"); status.setTextColor(DANGER);
+            recordButton.setText("Aufnahme beenden"); recordButton.setTextColor(Color.WHITE); recordButton.setBackground(roundRect(DANGER, 18));
+            modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); ui.removeCallbacks(timerTick); ui.post(timerTick);
+        } else if ("stopping".equals(state) || "transcribing".equals(state)) {
+            ui.removeCallbacks(timerTick); status.setText("TRANSKRIBIERE…"); status.setTextColor(ACCENT);
+            recordButton.setText("Bitte warten…"); recordButton.setEnabled(false);
+        } else if ("done".equals(state)) {
+            ui.removeCallbacks(timerTick); timer.setText("00:00"); status.setText("Fertig · im Verlauf gespeichert"); status.setTextColor(ACCENT);
+            recordButton.setText("Aufnahme starten"); recordButton.setTextColor(Color.rgb(8, 23, 20)); recordButton.setBackground(roundRect(ACCENT, 18));
+            recordButton.setEnabled(true); modelSpinner.setEnabled(true); wavSwitch.setEnabled(true);
+            if (text != null && !text.isEmpty()) Toast.makeText(this, "Transkription abgeschlossen", Toast.LENGTH_SHORT).show();
+        } else if ("error".equals(state)) {
+            ui.removeCallbacks(timerTick); status.setText("Fehler"); status.setTextColor(DANGER); recordButton.setEnabled(true); recordButton.setText("Erneut versuchen");
+            modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); if (text != null) Toast.makeText(this, text, Toast.LENGTH_LONG).show();
+        }
+    }
+
     private Button tabButton(String label, boolean selected) {
-        Button b = new Button(this);
-        b.setAllCaps(false);
-        b.setText(label);
-        b.setTextSize(14);
-        b.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
-        b.setTextColor(selected ? TEXT : MUTED);
-        b.setBackground(roundRect(selected ? CARD_2 : Color.TRANSPARENT, 14));
-        return b;
+        Button b = new Button(this); b.setAllCaps(false); b.setText(label); b.setTextSize(14);
+        b.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL); b.setTextColor(selected ? TEXT : MUTED);
+        b.setBackground(roundRect(selected ? CARD_2 : Color.TRANSPARENT, 14)); return b;
     }
 
     private LinearLayout statCell(String value, String label) {
-        LinearLayout box = column();
-        box.setGravity(Gravity.CENTER);
-        box.addView(textCentered(value, 21, TEXT, true));
-        box.addView(textCentered(label, 11, MUTED, false));
-        return box;
+        LinearLayout box = column(); box.setGravity(Gravity.CENTER); box.addView(textCentered(value, 21, TEXT, true)); box.addView(textCentered(label, 11, MUTED, false)); return box;
     }
-
-    private TextView sectionLabel(String value) {
-        TextView v = text(value, 11, MUTED, true);
-        v.setLetterSpacing(0.12f);
-        return v;
-    }
-
+    private TextView sectionLabel(String value) { TextView v = text(value, 11, MUTED, true); v.setLetterSpacing(0.12f); return v; }
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
-    private View space(int dp) { View v = new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(1, dp(dp))); return v; }
-
-    private TextView text(String value, int sp, int color, boolean bold) {
-        TextView v = new TextView(this);
-        v.setText(value); v.setTextSize(sp); v.setTextColor(color);
-        v.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-        v.setLineSpacing(0, 1.12f);
-        return v;
-    }
-    private TextView textCentered(String value, int sp, int color, boolean bold) {
-        TextView v = text(value, sp, color, bold); v.setGravity(Gravity.CENTER); return v;
-    }
-
-    private GradientDrawable roundRect(int color, int radiusDp) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color); g.setCornerRadius(dp(radiusDp)); return g;
-    }
+    private View space(int d) { View v = new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(1, dp(d))); return v; }
+    private TextView text(String value, int sp, int color, boolean bold) { TextView v = new TextView(this); v.setText(value); v.setTextSize(sp); v.setTextColor(color); v.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL); v.setLineSpacing(0, 1.12f); return v; }
+    private TextView textCentered(String value, int sp, int color, boolean bold) { TextView v = text(value, sp, color, bold); v.setGravity(Gravity.CENTER); return v; }
+    private GradientDrawable roundRect(int color, int radiusDp) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(radiusDp)); return g; }
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
     private LinearLayout.LayoutParams matchWrap() { return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); }
     private LinearLayout.LayoutParams weight() { return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); }
     private LinearLayout.LayoutParams weightHeight(int h) { return new LinearLayout.LayoutParams(0, h, 1f); }
-
-    private static String formatDuration(long ms) {
-        long sec = Math.max(0, ms / 1000);
-        return String.format(Locale.getDefault(), "%02d:%02d", sec / 60, sec % 60);
-    }
-    private static String formatDurationCompact(long ms) {
-        long sec = Math.max(0, ms / 1000);
-        if (sec < 60) return sec + " s";
-        return (sec / 60) + "m " + (sec % 60) + "s";
-    }
-    private static String modelShort(String m) {
-        if (m.startsWith("tiny")) return "Tiny Q5_1";
-        if (m.startsWith("small")) return "Small Q5_1";
-        return "Base Q5_1";
-    }
+    private static String formatDuration(long ms) { long sec = Math.max(0, ms / 1000); return String.format(Locale.getDefault(), "%02d:%02d", sec / 60, sec % 60); }
+    private static String formatDurationCompact(long ms) { long sec = Math.max(0, ms / 1000); if (sec < 60) return sec + " s"; return (sec / 60) + "m " + (sec % 60) + "s"; }
+    private static String modelShort(String m) { if (m.startsWith("tiny")) return "Tiny Q5_1"; if (m.startsWith("small")) return "Small Q5_1"; return "Base Q5_1"; }
 }
