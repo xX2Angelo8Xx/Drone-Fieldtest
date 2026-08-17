@@ -51,20 +51,10 @@ jobs:
           echo "e050f7970618a659205450ad97eb95a18d69c9ee  app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
           ls -lh app/src/main/assets/models/
 
-      - name: Generate deterministic prototype signing keystore
+      - name: Restore persistent showcase signing key
         run: |
-          cd SpeechNotes
-          rm -f showcase-release.jks
-          keytool -genkeypair -v \
-            -keystore showcase-release.jks \
-            -storetype JKS \
-            -storepass chatgpt-showcase \
-            -keypass chatgpt-showcase \
-            -alias speechnotes \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Speech Notes ChatGPT Showcase, OU=Prototype, O=OpenAI Chat Showcase, L=Vienna, C=AT"
+          base64 -d .github/speechnotes-showcase.jks.b64 > SpeechNotes/showcase-release.jks
+          keytool -list -keystore SpeechNotes/showcase-release.jks -storepass chatgpt-showcase -alias speechnotes
 
       - name: Build signed release APK
         working-directory: SpeechNotes
@@ -96,4 +86,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Speech Notes v1.1.0" \
-            --notes "Capability benchmark release. Bundles only multilingual Whisper Base Q5_1 and Large-v3-Turbo Q5_0. Aviation Vocabulary is an optional toggle and defaults off, allowing pure-model benchmarking. Includes expandable transcripts, fixed bottom navigation, system-bar inset handling, background recording, and optional WAV retention. Fully offline after installation."
+            --notes "Capability benchmark release. Bundles only multilingual Whisper Base Q5_1 and Large-v3-Turbo Q5_0. Aviation Vocabulary is an optional toggle and defaults off, allowing pure-model benchmarking. Includes expandable transcripts, fixed bottom navigation, system-bar inset handling, background recording, optional WAV retention, and a persistent signing key for upgradeable future releases. Fully offline after installation."
