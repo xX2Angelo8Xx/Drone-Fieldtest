@@ -21,6 +21,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -30,6 +31,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.List;
@@ -50,11 +52,14 @@ public class MainActivity extends Activity {
     private LinearLayout root;
     private TextView timer;
     private TextView status;
+    private TextView modelLoadStatus;
     private Button recordButton;
+    private Button loadModelButton;
     private Spinner modelSpinner;
     private Switch wavSwitch;
     private Switch aviationSwitch;
     private SharedPreferences prefs;
+    private boolean modelLoading = false;
     private final android.os.Handler ui = new android.os.Handler();
 
     private final Runnable timerTick = new Runnable() {
@@ -89,6 +94,7 @@ public class MainActivity extends Activity {
         else registerReceiver(stateReceiver, filter);
         if (RecordingService.isRecording()) applyState("recording", null);
         else if (RecordingService.isTranscribing()) applyState("transcribing", null);
+        else refreshModelState();
     }
 
     @Override protected void onStop() {
@@ -156,19 +162,36 @@ public class MainActivity extends Activity {
         modelSpinner.setSelection(Math.max(0, Math.min(1, savedModel)));
         root.addView(modelSpinner, matchWrap());
 
+        root.addView(space(8));
+        loadModelButton = new Button(this);
+        loadModelButton.setAllCaps(false);
+        loadModelButton.setText("Modell laden");
+        loadModelButton.setTextSize(15);
+        loadModelButton.setTextColor(TEXT);
+        loadModelButton.setBackground(roundRect(CARD_2, 15));
+        loadModelButton.setOnClickListener(v -> loadSelectedModel());
+        root.addView(loadModelButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        root.addView(space(6));
+        modelLoadStatus = text("Nicht geladen", 12, MUTED, false);
+        root.addView(modelLoadStatus, matchWrap());
+
+        modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                prefs.edit().putInt("model_v2", position).apply();
+                refreshModelState();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+
         root.addView(space(14));
-        LinearLayout aviationCard = toggleCard(
-                "Aviation Vocabulary",
-                "Optionaler Fachwort-Kontext für beide Modelle");
+        LinearLayout aviationCard = toggleCard("Aviation Vocabulary", "Optionaler Fachwort-Kontext für beide Modelle");
         aviationSwitch = new Switch(this);
         aviationSwitch.setChecked(prefs.getBoolean("aviation_prompt", false));
         aviationCard.addView(aviationSwitch);
         root.addView(aviationCard, matchWrap());
 
         root.addView(space(10));
-        LinearLayout wavCard = toggleCard(
-                "WAV zusätzlich speichern",
-                "16 kHz · Mono · PCM16");
+        LinearLayout wavCard = toggleCard("WAV zusätzlich speichern", "16 kHz · Mono · PCM16");
         wavSwitch = new Switch(this);
         wavSwitch.setChecked(prefs.getBoolean("wav", false));
         wavCard.addView(wavSwitch);
@@ -177,6 +200,7 @@ public class MainActivity extends Activity {
 
         if (RecordingService.isRecording()) applyState("recording", null);
         else if (RecordingService.isTranscribing()) applyState("transcribing", null);
+        else refreshModelState();
     }
 
     private LinearLayout toggleCard(String title, String subtitle) {
@@ -189,12 +213,76 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    private String selectedModelName() {
+        return modelSpinner != null && modelSpinner.getSelectedItemPosition() == 1
+                ? "large-v3-turbo-q5_0" : "base-q5_1";
+    }
+
+    private File selectedModelFile() {
+        return new File(new File(getFilesDir(), "models"), "ggml-" + selectedModelName() + ".bin");
+    }
+
+    private void refreshModelState() {
+        if (recordButton == null || loadModelButton == null || modelLoadStatus == null || modelSpinner == null) return;
+        if (modelLoading || RecordingService.isRecording() || RecordingService.isTranscribing()) return;
+        boolean loaded = WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath());
+        recordButton.setEnabled(loaded);
+        recordButton.setAlpha(loaded ? 1f : 0.55f);
+        loadModelButton.setEnabled(!loaded);
+        loadModelButton.setText(loaded ? "Modell geladen" : "Modell laden");
+        if (loaded) {
+            modelLoadStatus.setText("Im RAM bereit · Initialisierung " + formatMsPrecise(WhisperBridge.currentModelLoadMs()));
+            modelLoadStatus.setTextColor(ACCENT);
+        } else {
+            modelLoadStatus.setText("Vor der Aufnahme einmal laden");
+            modelLoadStatus.setTextColor(MUTED);
+        }
+    }
+
+    private void loadSelectedModel() {
+        if (modelLoading || RecordingService.isRecording() || RecordingService.isTranscribing()) return;
+        final String model = selectedModelName();
+        modelLoading = true;
+        loadModelButton.setEnabled(false);
+        modelSpinner.setEnabled(false);
+        recordButton.setEnabled(false);
+        modelLoadStatus.setText("Modell wird vorbereitet und in den RAM geladen …");
+        modelLoadStatus.setTextColor(ACCENT);
+
+        new Thread(() -> {
+            try {
+                long extractStart = SystemClock.elapsedRealtime();
+                File file = ModelManager.ensureModel(this, model);
+                long extractMs = SystemClock.elapsedRealtime() - extractStart;
+                long loadMs = WhisperBridge.loadModel(file.getAbsolutePath());
+                if (loadMs < 0) throw new IllegalStateException("Whisper-Context konnte nicht initialisiert werden");
+                ui.post(() -> {
+                    modelLoading = false;
+                    modelSpinner.setEnabled(true);
+                    modelLoadStatus.setText("Bereit · Datei " + formatMsPrecise(extractMs) + " · Init " +
+                            formatMsPrecise(WhisperBridge.currentModelLoadMs()));
+                    modelLoadStatus.setTextColor(ACCENT);
+                    refreshModelState();
+                });
+            } catch (Throwable t) {
+                ui.post(() -> {
+                    modelLoading = false;
+                    modelSpinner.setEnabled(true);
+                    loadModelButton.setEnabled(true);
+                    modelLoadStatus.setText("Ladefehler: " + t.getMessage());
+                    modelLoadStatus.setTextColor(DANGER);
+                    refreshModelState();
+                });
+            }
+        }, "model-loader").start();
+    }
+
     private void showHistoryTab() {
         ui.removeCallbacks(timerTick);
         root = buildPage(false);
         root.addView(text("Verlauf", 29, TEXT, true));
         root.addView(space(4));
-        root.addView(text("Text antippen = kopieren · Pfeil = vollständig anzeigen", 14, MUTED, false));
+        root.addView(text("Text antippen = kopieren · Chevron = vollständig anzeigen", 14, MUTED, false));
         root.addView(space(18));
 
         TranscriptDb db = new TranscriptDb(this);
@@ -218,38 +306,56 @@ public class MainActivity extends Activity {
 
         for (TranscriptDb.Entry e : entries) {
             LinearLayout card = column();
-            card.setPadding(dp(16), dp(15), dp(12), dp(15));
+            card.setPadding(dp(16), dp(15), dp(16), dp(13));
             card.setBackground(roundRect(CARD, 18));
             String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(e.createdAt));
             card.addView(text(date + "  ·  " + modelShort(e.model) + "  ·  " + formatDuration(e.durationMs), 12, MUTED, false));
             card.addView(space(8));
 
-            LinearLayout textRow = row();
-            textRow.setGravity(Gravity.TOP);
             TextView body = text(e.text.isEmpty() ? "(Kein Text erkannt)" : e.text, 15, TEXT, false);
             body.setMaxLines(5);
-            body.setPadding(0, 0, dp(8), 0);
             body.setOnClickListener(v -> copyText(e.text));
-            textRow.addView(body, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            card.addView(body, matchWrap());
+
+            View fade = new View(this);
+            GradientDrawable fadeBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{Color.TRANSPARENT, CARD});
+            fade.setBackground(fadeBg);
+            LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(13));
+            fp.topMargin = -dp(13);
+            card.addView(fade, fp);
 
             Button expand = new Button(this);
             expand.setAllCaps(false); expand.setText("⌄"); expand.setTextSize(22); expand.setTextColor(MUTED);
             expand.setGravity(Gravity.CENTER); expand.setPadding(0, 0, 0, 0);
-            expand.setMinWidth(dp(42)); expand.setMinimumWidth(dp(42)); expand.setMinHeight(dp(42)); expand.setMinimumHeight(dp(42));
-            expand.setBackground(roundRect(CARD_2, 12));
+            expand.setMinHeight(dp(34)); expand.setMinimumHeight(dp(34));
+            expand.setBackgroundColor(Color.TRANSPARENT);
             final boolean[] open = {false};
             expand.setOnClickListener(v -> {
                 open[0] = !open[0];
                 body.setMaxLines(open[0] ? Integer.MAX_VALUE : 5);
+                fade.setVisibility(open[0] ? View.GONE : View.VISIBLE);
                 expand.setText(open[0] ? "⌃" : "⌄");
             });
-            textRow.addView(expand, new LinearLayout.LayoutParams(dp(42), dp(42)));
-            card.addView(textRow, matchWrap());
-            card.addView(space(9));
+            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(dp(72), dp(34));
+            ep.gravity = Gravity.CENTER_HORIZONTAL;
+            card.addView(expand, ep);
 
-            String perf = e.wordCount + " Wörter  ·  Inferenz " + formatDurationCompact(e.inferenceMs);
+            String perf = e.wordCount + " Wörter  ·  Whisper " + formatMsPrecise(e.inferenceMs);
             if (e.wavPath != null) perf += "  ·  WAV gespeichert";
             card.addView(text(perf, 12, MUTED, false));
+            if (e.encodeMs > 0 || e.decodeMs > 0 || e.modelLoadMs > 0) {
+                card.addView(space(4));
+                card.addView(text(
+                        "Profil: Load " + formatMsPrecise(e.modelLoadMs) +
+                        " · PCM " + formatMsPrecise(e.pcmMs) +
+                        " · Encode " + formatMsPrecise(e.encodeMs) +
+                        " · Decode " + formatMsPrecise(e.decodeMs) +
+                        " · Batch " + formatMsPrecise(e.batchMs) +
+                        " · Sample " + formatMsPrecise(e.sampleMs) +
+                        " · Prompt " + formatMsPrecise(e.promptMs),
+                        11, MUTED, false));
+            }
             LinearLayout.LayoutParams cp = matchWrap(); cp.bottomMargin = dp(10);
             root.addView(card, cp);
         }
@@ -314,7 +420,12 @@ public class MainActivity extends Activity {
         if (RecordingService.isRecording()) {
             startService(new Intent(this, RecordingService.class).setAction(RecordingService.ACTION_STOP)); return;
         }
-        if (RecordingService.isTranscribing()) return;
+        if (RecordingService.isTranscribing() || modelLoading) return;
+        if (!WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath())) {
+            Toast.makeText(this, "Bitte zuerst Modell laden.", Toast.LENGTH_SHORT).show();
+            refreshModelState();
+            return;
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO); return;
         }
@@ -352,20 +463,26 @@ public class MainActivity extends Activity {
         if (status == null || recordButton == null || timer == null || modelSpinner == null || wavSwitch == null || aviationSwitch == null) return;
         if ("recording".equals(state)) {
             status.setText("● AUFNAHME AKTIV"); status.setTextColor(DANGER);
-            recordButton.setText("Aufnahme beenden"); recordButton.setTextColor(Color.WHITE); recordButton.setBackground(roundRect(DANGER, 18));
-            modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); aviationSwitch.setEnabled(false); ui.removeCallbacks(timerTick); ui.post(timerTick);
+            recordButton.setText("Aufnahme beenden"); recordButton.setEnabled(true); recordButton.setAlpha(1f);
+            recordButton.setTextColor(Color.WHITE); recordButton.setBackground(roundRect(DANGER, 18));
+            modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); aviationSwitch.setEnabled(false);
+            if (loadModelButton != null) loadModelButton.setEnabled(false);
+            ui.removeCallbacks(timerTick); ui.post(timerTick);
         } else if ("stopping".equals(state) || "transcribing".equals(state)) {
             ui.removeCallbacks(timerTick); status.setText("TRANSKRIBIERE…"); status.setTextColor(ACCENT);
             recordButton.setText("Bitte warten…"); recordButton.setEnabled(false);
             modelSpinner.setEnabled(false); wavSwitch.setEnabled(false); aviationSwitch.setEnabled(false);
+            if (loadModelButton != null) loadModelButton.setEnabled(false);
         } else if ("done".equals(state)) {
             ui.removeCallbacks(timerTick); timer.setText("00:00"); status.setText("Fertig · im Verlauf gespeichert"); status.setTextColor(ACCENT);
             recordButton.setText("Aufnahme starten"); recordButton.setTextColor(Color.rgb(8, 23, 20)); recordButton.setBackground(roundRect(ACCENT, 18));
-            recordButton.setEnabled(true); modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
+            modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
+            refreshModelState();
             if (text != null && !text.isEmpty()) Toast.makeText(this, "Transkription abgeschlossen", Toast.LENGTH_SHORT).show();
         } else if ("error".equals(state)) {
-            ui.removeCallbacks(timerTick); status.setText("Fehler"); status.setTextColor(DANGER); recordButton.setEnabled(true); recordButton.setText("Erneut versuchen");
-            modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
+            ui.removeCallbacks(timerTick); status.setText("Fehler"); status.setTextColor(DANGER);
+            recordButton.setText("Aufnahme starten"); modelSpinner.setEnabled(true); wavSwitch.setEnabled(true); aviationSwitch.setEnabled(true);
+            refreshModelState();
             if (text != null) Toast.makeText(this, text, Toast.LENGTH_LONG).show();
         }
     }
@@ -377,7 +494,8 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout statCell(String value, String label) {
-        LinearLayout box = column(); box.setGravity(Gravity.CENTER); box.addView(textCentered(value, 21, TEXT, true)); box.addView(textCentered(label, 11, MUTED, false)); return box;
+        LinearLayout box = column(); box.setGravity(Gravity.CENTER);
+        box.addView(textCentered(value, 21, TEXT, true)); box.addView(textCentered(label, 11, MUTED, false)); return box;
     }
     private TextView sectionLabel(String value) { TextView v = text(value, 11, MUTED, true); v.setLetterSpacing(0.12f); return v; }
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
@@ -392,6 +510,11 @@ public class MainActivity extends Activity {
     private LinearLayout.LayoutParams weightHeight(int h) { return new LinearLayout.LayoutParams(0, h, 1f); }
     private static String formatDuration(long ms) { long sec = Math.max(0, ms / 1000); return String.format(Locale.getDefault(), "%02d:%02d", sec / 60, sec % 60); }
     private static String formatDurationCompact(long ms) { long sec = Math.max(0, ms / 1000); if (sec < 60) return sec + " s"; return (sec / 60) + "m " + (sec % 60) + "s"; }
+    private static String formatMsPrecise(long ms) {
+        if (ms < 1000) return ms + " ms";
+        if (ms < 60_000) return String.format(Locale.getDefault(), "%.1f s", ms / 1000.0);
+        return String.format(Locale.getDefault(), "%dm %.1fs", ms / 60_000, (ms % 60_000) / 1000.0);
+    }
     private static String modelShort(String m) {
         if (m.startsWith("large-v3-turbo")) return "Large-v3-Turbo Q5_0";
         if (m.startsWith("tiny")) return "Tiny Q5_1";
