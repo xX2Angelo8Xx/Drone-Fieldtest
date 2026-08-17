@@ -23,10 +23,12 @@ Java_com_chatgpt_speechnotes_WhisperBridge_transcribePcm16(
         jstring modelPathJ,
         jstring pcmPathJ,
         jstring languageJ,
+        jstring initialPromptJ,
         jint threadsJ) {
     std::string modelPath = jstr(env, modelPathJ);
     std::string pcmPath = jstr(env, pcmPathJ);
     std::string language = jstr(env, languageJ);
+    std::string initialPrompt = jstr(env, initialPromptJ);
 
     std::ifstream f(pcmPath, std::ios::binary | std::ios::ate);
     if (!f) return env->NewStringUTF("[PCM-Datei konnte nicht geöffnet werden]");
@@ -60,6 +62,7 @@ Java_com_chatgpt_speechnotes_WhisperBridge_transcribePcm16(
     p.no_context = false;
     p.single_segment = false;
     if (!language.empty()) p.language = language.c_str();
+    if (!initialPrompt.empty()) p.initial_prompt = initialPrompt.c_str();
 
     int rc = whisper_full(ctx, p, pcmf32.data(), (int)pcmf32.size());
     if (rc != 0) {
