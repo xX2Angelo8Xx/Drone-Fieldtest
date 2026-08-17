@@ -66,13 +66,13 @@ jobs:
           ls -lh app/build/outputs/apk/release/app-release.apk
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
           sha256sum app/build/outputs/apk/release/app-release.apk
-          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.1.0.apk
+          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.2.0.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.1.0-arm64
-          path: SpeechNotes-1.1.0.apk
+          name: SpeechNotes-v1.2.0-arm64
+          path: SpeechNotes-1.2.0.apk
           compression-level: 0
           retention-days: 14
 
@@ -80,10 +80,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete speechnotes-v1.1.0 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.1.0 \
-            SpeechNotes-1.1.0.apk#SpeechNotes-1.1.0.apk \
+          gh release delete speechnotes-v1.2.0 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.2.0 \
+            SpeechNotes-1.2.0.apk#SpeechNotes-1.2.0.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Speech Notes v1.1.0" \
-            --notes "Capability benchmark release. Bundles only multilingual Whisper Base Q5_1 and Large-v3-Turbo Q5_0. Aviation Vocabulary is an optional toggle and defaults off, allowing pure-model benchmarking. Includes expandable transcripts, fixed bottom navigation, system-bar inset handling, background recording, optional WAV retention, and a persistent signing key for upgradeable future releases. Fully offline after installation."
+            --title "Speech Notes v1.2.0" \
+            --notes "Profiling and resident-model release. Adds explicit model loading, keeps the selected Whisper context resident in RAM across recordings, records native encode/decode/sample/batch/prompt timings plus PCM and model-load timings, and moves the transcript expander to the bottom edge with full-width text. Base Q5_1 and Large-v3-Turbo Q5_0 remain fully offline. Uses the persistent v1.1+ signing key for in-place upgrades."
