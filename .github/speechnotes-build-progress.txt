@@ -3,8 +3,8 @@ run_id=32090795332
 run_attempt=1
 phase=native_build
 state=running
-updated_utc=2026-08-18T02:11:40Z
-detail=Native progress: > Task :app:configureCMakeRelease[arm64-v8a] 
+updated_utc=2026-08-18T02:12:41Z
+detail=Native progress: > Task :app:buildCMakeRelease[arm64-v8a] 
 
 ===== LIVE LOG TAIL =====
 
@@ -40,3 +40,5 @@ The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml 
 > Task :app:processReleaseManifest
 > Task :app:extractProguardFiles
 > Task :app:configureCMakeRelease[arm64-v8a]
+> Task :app:processReleaseManifestForPackage
+> Task :app:buildCMakeRelease[arm64-v8a]
