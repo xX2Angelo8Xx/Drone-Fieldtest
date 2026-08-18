@@ -1,7 +1,7 @@
 source_commit=cd99a2dad673b1d7dde201b9670d55b8f0f5904c
 run_id=32182050242
 run_attempt=1
-phase=patches
-state=done
-updated_utc=2026-08-18T20:25:29Z
-detail=v1.8.2 KAI transition diagnostics + copyable telemetry export applied
+phase=quantizer_build
+state=running
+updated_utc=2026-08-18T20:25:30Z
+detail=Building whisper.cpp v1.9.1 host whisper-quantize tool
