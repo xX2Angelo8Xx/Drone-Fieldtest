@@ -1,0 +1,13 @@
+name: Build Speech Notes v1.8.4 APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Use chatgpt-speechnotes.yml; this helper file only documents v1.8.4."
