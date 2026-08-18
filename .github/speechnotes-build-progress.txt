@@ -1,7 +1,7 @@
 source_commit=828daf7d868d79341321d246587fafb98bb8b115
 run_id=32089411410
 run_attempt=1
-phase=whisper_source
-state=done
-updated_utc=2026-08-18T01:48:27Z
-detail=whisper.cpp v1.9.1 fetched
+phase=patches
+state=running
+updated_utc=2026-08-18T01:48:29Z
+detail=Applying timing instrumentation
