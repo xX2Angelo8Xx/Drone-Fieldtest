@@ -139,3 +139,6 @@ s = s.replace(old_card, new_card, 1)
 
 bench.write_text(s)
 print('Applied v1.8 Q4_0 + isolated KleidiAI encoder lab')
+
+# v1.8.1 keeps the v1.8 backend/model work and replaces only the benchmark matrix.
+exec(Path('.github/patch_speechnotes_v181_validation_lab.py').read_text())
