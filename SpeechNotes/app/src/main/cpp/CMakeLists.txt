@@ -8,15 +8,27 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 
 # Build the official ggml Android CPU variants as dynamically loadable modules.
-# This lets the app benchmark the conservative ARMv8.0 baseline against the
-# highest feature set that the device itself reports as safe to execute.
 set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
 set(GGML_CPU ON CACHE BOOL "" FORCE)
 
+# Experimental Vulkan backend for the reproducible ARM-Best vs Vulkan suite.
+# On CI the host Vulkan headers/glslc/SPIR-V headers are installed before Gradle.
+# The Android toolchain still resolves/link against the target libvulkan.so.
+set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+if(EXISTS "/usr/include/vulkan/vulkan.hpp")
+    set(Vulkan_INCLUDE_DIR "/usr/include" CACHE PATH "" FORCE)
+endif()
+if(EXISTS "/usr/bin/glslc")
+    set(Vulkan_GLSLC_EXECUTABLE "/usr/bin/glslc" CACHE FILEPATH "" FORCE)
+endif()
+if(EXISTS "/usr/share/cmake/SPIRV-Headers")
+    set(SPIRV-Headers_DIR "/usr/share/cmake/SPIRV-Headers" CACHE PATH "" FORCE)
+endif()
+
 # ggml MODULE backends use CMAKE_RUNTIME_OUTPUT_DIRECTORY. Keep them next to
-# the normal Android native libraries so AGP packages them into lib/arm64-v8a.
+# Android native libraries so AGP packages them into lib/arm64-v8a.
 if(CMAKE_LIBRARY_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
 endif()
