@@ -1,3 +1,3 @@
-status=success
-source_commit=f870798d7cb28264a67bd9eab2004b5fd2560231
-recorded_utc=2026-08-18T00:03:50Z
+status=cancelled
+source_commit=bbe15f1943c5e564695b2fb92767c543a57aa893
+recorded_utc=2026-08-18T00:18:54Z
