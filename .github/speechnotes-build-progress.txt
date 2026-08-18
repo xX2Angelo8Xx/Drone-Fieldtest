@@ -1,7 +1,7 @@
 source_commit=a10f8b2b23931cf3be610cb5d4077136b9d5b925
 run_id=32088941505
 run_attempt=1
-phase=patches
-state=done
-updated_utc=2026-08-18T01:40:32Z
-detail=Timing, benchmark, ARM Best and Vulkan runtime patches applied
+phase=models
+state=running
+updated_utc=2026-08-18T01:40:33Z
+detail=Downloading and verifying bundled Whisper models
