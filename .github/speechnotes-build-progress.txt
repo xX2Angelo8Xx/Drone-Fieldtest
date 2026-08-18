@@ -2,43 +2,43 @@ source_commit=a10f8b2b23931cf3be610cb5d4077136b9d5b925
 run_id=32088941505
 run_attempt=1
 phase=native_build
-state=running
-updated_utc=2026-08-18T01:43:49Z
-detail=Gradle active: > Task :app:buildCMakeRelease[arm64-v8a] 
+state=failed
+updated_utc=2026-08-18T01:44:30Z
+detail=Gradle/CMake build failed with rc=1
 
 ===== LIVE LOG TAIL =====
+  1 error generated.
+  [381/452] Building CXX object whisper-build/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vec_q3_k.comp.cpp.o
+  [382/452] Building CXX object whisper-build/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vec_q4_k.comp.cpp.o
+  [383/452] Building CXX object whisper-build/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vec_q5_k.comp.cpp.o
+  [384/452] Building CXX object whisper-build/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vec_q2_k.comp.cpp.o
+  [385/452] Building CXX object whisper-build/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vec.comp.cpp.o
+  ninja: build stopped: subcommand failed.
+  
+  C++ build system [build] failed while executing:
+      /usr/local/lib/android/sdk/cmake/3.22.1/bin/ninja \
+        -C \
+        /home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/.cxx/Release/c81l456q/arm64-v8a \
+        ggml \
+        ggml-base \
+        ggml-cpu-android_armv8.0_1 \
+        ggml-cpu-android_armv8.2_1 \
+        ggml-cpu-android_armv8.2_2 \
+        ggml-cpu-android_armv8.6_1 \
+        ggml-cpu-android_armv9.0_1 \
+        ggml-cpu-android_armv9.2_1 \
+        ggml-cpu-android_armv9.2_2 \
+        ggml-vulkan \
+        parakeet \
+        whisper \
+        whisper_jni
+    from /home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app
 
-Welcome to Gradle 8.9!
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
 
-Here are the highlights of this release:
- - Enhanced Error and Warning Messages
- - IDE Integration Improvements
- - Daemon JVM Information
-
-For more details see https://docs.gradle.org/8.9/release-notes.html
-
-To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
-Daemon will be stopped at the end of the build 
-> Task :app:preBuild UP-TO-DATE
-> Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:checkReleaseAarMetadata
-> Task :app:javaPreCompileRelease
-> Task :app:generateReleaseResValues
-> Task :app:mapReleaseSourceSetPaths
-> Task :app:generateReleaseResources
-> Task :app:packageReleaseResources
-> Task :app:mergeReleaseResources
-> Task :app:createReleaseCompatibleScreenManifests
-> Task :app:extractDeepLinksRelease
-> Task :app:parseReleaseLocalResources
-
-> Task :app:processReleaseMainManifest
-/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/AndroidManifest.xml:11:9-41 Warning:
-	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
-The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
-
-> Task :app:processReleaseManifest
-> Task :app:extractProguardFiles
-> Task :app:configureCMakeRelease[arm64-v8a]
-> Task :app:processReleaseManifestForPackage
-> Task :app:buildCMakeRelease[arm64-v8a]
+BUILD FAILED in 3m 43s
+16 actionable tasks: 16 executed
