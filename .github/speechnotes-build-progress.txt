@@ -1,7 +1,7 @@
 source_commit=828daf7d868d79341321d246587fafb98bb8b115
 run_id=32089411410
 run_attempt=1
-phase=vulkan_deps
-state=done
-updated_utc=2026-08-18T01:48:16Z
-detail=Vulkan and SPIR-V headers staged
+phase=whisper_source
+state=running
+updated_utc=2026-08-18T01:48:25Z
+detail=Cloning whisper.cpp v1.9.1
