@@ -71,18 +71,23 @@ jobs:
 
       - name: Build signed release APK
         working-directory: SpeechNotes
-        run: gradle --no-daemon :app:assembleRelease
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleRelease 2>&1 | tee /tmp/speechnotes-gradle.log
 
       - name: Inspect APK and ARM backends
         run: |
-          cd SpeechNotes
-          ls -lh app/build/outputs/apk/release/app-release.apk
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
-          sha256sum app/build/outputs/apk/release/app-release.apk
-          unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep 'lib/arm64-v8a/libggml-cpu-android_arm'
-          grep -q 'libggml-cpu-android_armv8.0_1.so' /tmp/apk-files.txt
-          grep -q 'libggml-cpu-android_armv8.6_1.so' /tmp/apk-files.txt
-          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.5.0.apk
+          set -o pipefail
+          {
+            cd SpeechNotes
+            ls -lh app/build/outputs/apk/release/app-release.apk
+            $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+            sha256sum app/build/outputs/apk/release/app-release.apk
+            unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep 'lib/arm64-v8a/libggml-cpu-android_arm'
+            grep -q 'libggml-cpu-android_armv8.0_1.so' /tmp/apk-files.txt
+            grep -q 'libggml-cpu-android_armv8.6_1.so' /tmp/apk-files.txt
+            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.5.0.apk
+          } 2>&1 | tee /tmp/speechnotes-inspect.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -113,8 +118,28 @@ jobs:
           printf 'status=%s\nsource_commit=%s\nrecorded_utc=%s\n' \
             "$BUILD_STATUS" "$BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             > .github/speechnotes-build-status.txt
+          if [ "$BUILD_STATUS" != "success" ]; then
+            {
+              echo "Speech Notes CI failure diagnostics"
+              echo "source_commit=$BUILD_SHA"
+              echo
+              if [ -f /tmp/speechnotes-gradle.log ]; then
+                echo "===== GRADLE TAIL ====="
+                tail -n 180 /tmp/speechnotes-gradle.log
+              else
+                echo "No Gradle log was produced; failure occurred before Gradle build."
+              fi
+              echo
+              if [ -f /tmp/speechnotes-inspect.log ]; then
+                echo "===== APK INSPECT ====="
+                cat /tmp/speechnotes-inspect.log
+              fi
+            } > .github/speechnotes-build-error.txt
+          else
+            rm -f .github/speechnotes-build-error.txt
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/speechnotes-build-status.txt
+          git add .github/speechnotes-build-status.txt .github/speechnotes-build-error.txt 2>/dev/null || true
           git commit -m "[skip ci] Speech Notes build status: $BUILD_STATUS" || exit 0
           git push origin HEAD:chatgpt-whisper-dictation-v1
