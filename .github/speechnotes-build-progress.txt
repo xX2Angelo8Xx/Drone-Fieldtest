@@ -1,44 +1,7 @@
 source_commit=828daf7d868d79341321d246587fafb98bb8b115
 run_id=32089411410
 run_attempt=1
-phase=native_build
-state=done
-updated_utc=2026-08-18T01:53:06Z
-detail=Gradle/CMake/Vulkan build completed
-
-===== LIVE LOG TAIL =====
-> Task :app:processReleaseResources
-> Task :app:stripReleaseDebugSymbols
-> Task :app:mergeReleaseAssets
-
-> Task :app:compileReleaseJavaWithJavac
-Note: Some input files use or override a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-
-> Task :app:generateReleaseLintVitalReportModel
-> Task :app:extractReleaseNativeSymbolTables
-> Task :app:dexBuilderRelease
-> Task :app:mergeReleaseGlobalSynthetics
-> Task :app:mergeDexRelease
-> Task :app:compileReleaseArtProfile
-> Task :app:extractReleaseVersionControlInfo
-> Task :app:processReleaseJavaRes NO-SOURCE
-> Task :app:mergeReleaseJavaResource
-> Task :app:optimizeReleaseResources
-> Task :app:collectReleaseDependencies
-> Task :app:sdkReleaseDependencyData
-> Task :app:validateSigningRelease
-> Task :app:writeReleaseAppMetadata
-> Task :app:writeReleaseSigningConfigVersions
-> Task :app:lintVitalAnalyzeRelease
-> Task :app:lintVitalReportRelease
-> Task :app:lintVitalRelease
-> Task :app:mergeReleaseNativeDebugMetadata
-> Task :app:compressReleaseAssets
-> Task :app:packageRelease
-> Task :app:createReleaseApkListingFileRedirect
-> Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_11-1787017733020.json
-
-BUILD SUCCESSFUL in 4m 17s
-49 actionable tasks: 49 executed
+phase=apk_inspect
+state=running
+updated_utc=2026-08-18T01:53:12Z
+detail=Verifying signature and packaged CPU/Vulkan backends
