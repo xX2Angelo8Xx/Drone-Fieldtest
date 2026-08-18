@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       SPEECHNOTES_SOURCE_SHA: ${{ github.sha }}
     steps:
@@ -54,34 +54,71 @@ jobs:
           cd ..
           bash .github/speechnotes-progress.sh whisper_source done "whisper.cpp v1.9.1 fetched"
 
-      - name: Extend pinned whisper.cpp timing API
+      - name: Apply Speech Notes patches
         run: |
-          bash .github/speechnotes-progress.sh patches running "Applying timing instrumentation"
+          bash .github/speechnotes-progress.sh patches running "Applying timings, navigation, ARM runtime and v1.8 encoder lab patches"
           python3 .github/patch_speechnotes_whisper_timings.py
-
-      - name: Add benchmark navigation to MainActivity
-        run: python3 .github/patch_speechnotes_benchmark_tab.py
-
-      - name: Apply ARM Best runtime defaults
-        run: python3 .github/patch_speechnotes_v150_runtime.py
-
-      - name: Apply v1.7 CPU Performance Lab
-        run: |
+          python3 .github/patch_speechnotes_benchmark_tab.py
+          python3 .github/patch_speechnotes_v150_runtime.py
           python3 .github/patch_speechnotes_v170_cpu_lab.py
-          bash .github/speechnotes-progress.sh patches done "CPU-only v1.7 performance lab patches applied"
+          python3 .github/patch_speechnotes_v180_kleidiai_backend.py
+          python3 .github/patch_speechnotes_v180_encoder_lab.py
+          bash .github/speechnotes-progress.sh patches done "v1.8 Q4/KleidiAI encoder lab patches applied"
 
-      - name: Download bundled Base and Large-v3-Turbo models
+      - name: Build pinned host whisper quantizer
         run: |
-          bash .github/speechnotes-progress.sh models running "Downloading and verifying bundled Whisper models"
-          cd SpeechNotes
-          rm -rf app/src/main/assets/models
-          mkdir -p app/src/main/assets/models
-          curl -fL --retry 4 -o app/src/main/assets/models/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
-          curl -fL --retry 4 -o app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
-          echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
-          echo "e050f7970618a659205450ad97eb95a18d69c9ee  app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
-          cd ..
-          bash .github/speechnotes-progress.sh models done "Both models downloaded and hashes verified"
+          set -euo pipefail
+          bash .github/speechnotes-progress.sh quantizer_build running "Building whisper.cpp v1.9.1 host whisper-quantize tool"
+          rm -rf /tmp/whisper-host
+          cmake -S SpeechNotes/app/src/main/cpp/whispercpp -B /tmp/whisper-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            -DWHISPER_BUILD_SERVER=OFF \
+            -DGGML_VULKAN=OFF \
+            -DGGML_NATIVE=ON
+          cmake --build /tmp/whisper-host --target whisper-quantize -j2
+          test -x /tmp/whisper-host/bin/whisper-quantize
+          /tmp/whisper-host/bin/whisper-quantize --help >/tmp/quantizer-help.txt 2>&1 || true
+          bash .github/speechnotes-progress.sh quantizer_build done "Pinned whisper-quantize tool ready" /tmp/quantizer-help.txt
+
+      - name: Download Q5 models and source Turbo model
+        run: |
+          set -euo pipefail
+          bash .github/speechnotes-progress.sh models running "Downloading Base Q5_1, Turbo Q5_0 and source Turbo model"
+          rm -rf SpeechNotes/app/src/main/assets/models
+          mkdir -p SpeechNotes/app/src/main/assets/models
+          curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 \
+            -o SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+          curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 \
+            -o SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+          curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 \
+            -o /tmp/ggml-large-v3-turbo.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+          echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
+          echo "e050f7970618a659205450ad97eb95a18d69c9ee  SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
+          test "$(stat -c%s /tmp/ggml-large-v3-turbo.bin)" -gt 1000000000
+          sha256sum /tmp/ggml-large-v3-turbo.bin | tee /tmp/turbo-source-sha256.txt
+          bash .github/speechnotes-progress.sh models done "Q5 models verified and source Turbo model downloaded" /tmp/turbo-source-sha256.txt
+
+      - name: Quantize Large-v3-Turbo to Q4_0
+        run: |
+          set -euo pipefail
+          bash .github/speechnotes-progress.sh quantize_q4 running "Quantizing official Large-v3-Turbo source model to Q4_0 with v1.9.1"
+          rm -f /tmp/quantize-q4.log
+          /tmp/whisper-host/bin/whisper-quantize \
+            /tmp/ggml-large-v3-turbo.bin \
+            SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin \
+            q4_0 2>&1 | tee /tmp/quantize-q4.log
+          test -s SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin
+          test "$(stat -c%s SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin)" -gt 300000000
+          sha256sum SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin | tee -a /tmp/quantize-q4.log
+          ls -lh SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin \
+                 SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin | tee -a /tmp/quantize-q4.log
+          rm -f /tmp/ggml-large-v3-turbo.bin
+          bash .github/speechnotes-progress.sh quantize_q4 done "Turbo Q4_0 generated and verified" /tmp/quantize-q4.log
 
       - name: Restore persistent showcase signing key
         run: |
@@ -93,7 +130,7 @@ jobs:
       - name: Build signed release APK with live heartbeat
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh native_build running "CPU-only Gradle/CMake build starting; heartbeat every 60 s"
+          bash .github/speechnotes-progress.sh native_build running "CPU/KleidiAI Gradle+CMake build starting; heartbeat every 60 s"
           rm -f /tmp/speechnotes-gradle.log
           (
             cd SpeechNotes
@@ -104,9 +141,10 @@ jobs:
             while kill -0 "$BUILD_PID" 2>/dev/null; do
               sleep 60
               if kill -0 "$BUILD_PID" 2>/dev/null; then
-                NINJA_LINE="$(grep -E '\[[0-9]+/[0-9]+\]' /tmp/speechnotes-gradle.log 2>/dev/null | tail -n 1 | tr '\n' ' ' | cut -c1-180 || true)"
-                LAST_LINE="$(tail -n 1 /tmp/speechnotes-gradle.log 2>/dev/null | tr '\n' ' ' | cut -c1-180)"
-                DETAIL="${NINJA_LINE:-${LAST_LINE:-waiting for output}}"
+                NINJA_LINE="$(grep -E '\[[0-9]+/[0-9]+\]' /tmp/speechnotes-gradle.log 2>/dev/null | tail -n 1 | tr '\n' ' ' | cut -c1-220 || true)"
+                KAI_LINE="$(grep -Ei 'KleidiAI|android_armv9.0_1_kai' /tmp/speechnotes-gradle.log 2>/dev/null | tail -n 1 | tr '\n' ' ' | cut -c1-220 || true)"
+                LAST_LINE="$(tail -n 1 /tmp/speechnotes-gradle.log 2>/dev/null | tr '\n' ' ' | cut -c1-220)"
+                DETAIL="${NINJA_LINE:-${KAI_LINE:-${LAST_LINE:-waiting for output}}}"
                 bash .github/speechnotes-progress.sh native_build running "Native progress: $DETAIL" /tmp/speechnotes-gradle.log
               fi
             done
@@ -122,35 +160,36 @@ jobs:
             bash .github/speechnotes-progress.sh native_build failed "Gradle/CMake build failed with rc=$BUILD_RC" /tmp/speechnotes-gradle.log
             exit "$BUILD_RC"
           fi
-          bash .github/speechnotes-progress.sh native_build done "CPU-only Gradle/CMake build completed" /tmp/speechnotes-gradle.log
+          bash .github/speechnotes-progress.sh native_build done "CPU/KleidiAI Gradle+CMake build completed" /tmp/speechnotes-gradle.log
 
-      - name: Inspect APK CPU backends
+      - name: Inspect APK encoder lab contents
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature and packaged ARM CPU backends"
+          bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature, stock ARMv9, KleidiAI backend and Q4_0 asset"
           {
             cd SpeechNotes
             ls -lh app/build/outputs/apk/release/app-release.apk
             $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
             sha256sum app/build/outputs/apk/release/app-release.apk
-            unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep 'lib/arm64-v8a/libggml'
-            grep -q 'libggml-cpu-android_armv8.0_1.so' /tmp/apk-files.txt
-            grep -q 'libggml-cpu-android_armv8.6_1.so' /tmp/apk-files.txt
+            unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep -E 'lib/arm64-v8a/libggml|assets/models/ggml-large-v3-turbo-q[45]_0.bin'
             grep -q 'libggml-cpu-android_armv9.0_1.so' /tmp/apk-files.txt
+            grep -q 'libggml-cpu-android_armv9.0_1_kai.so' /tmp/apk-files.txt
+            grep -q 'assets/models/ggml-large-v3-turbo-q5_0.bin' /tmp/apk-files.txt
+            grep -q 'assets/models/ggml-large-v3-turbo-q4_0.bin' /tmp/apk-files.txt
             if grep -q 'libggml-vulkan.so' /tmp/apk-files.txt; then
-              echo 'Vulkan backend must not be present in v1.7' >&2
+              echo 'Vulkan backend must not be present in v1.8' >&2
               exit 1
             fi
             $ANDROID_HOME/build-tools/35.0.0/aapt dump xmltree app/build/outputs/apk/release/app-release.apk AndroidManifest.xml | grep -A2 extractNativeLibs
-            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.7.0.apk
+            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.0.apk
           } 2>&1 | tee /tmp/speechnotes-inspect.log
-          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; ARMv8.0, ARMv8.6 and ARMv9.0 verified; Vulkan absent" /tmp/speechnotes-inspect.log
+          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; Q5/Q4 + stock ARMv9 + isolated KleidiAI verified; Vulkan absent" /tmp/speechnotes-inspect.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.7.0-arm64
-          path: SpeechNotes-1.7.0.apk
+          name: SpeechNotes-v1.8.0-arm64
+          path: SpeechNotes-1.8.0.apk
           compression-level: 0
           retention-days: 14
 
@@ -158,15 +197,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.7.0"
-          gh release delete speechnotes-v1.7.0 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.7.0 \
-            SpeechNotes-1.7.0.apk#SpeechNotes-1.7.0.apk \
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.0"
+          gh release delete speechnotes-v1.8.0 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.8.0 \
+            SpeechNotes-1.8.0.apk#SpeechNotes-1.8.0.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SPEECHNOTES_SOURCE_SHA" \
-            --title "Speech Notes v1.7.0" \
-            --notes "CPU Performance Lab release. Vulkan is completely removed. Normal dictation remains ARM Best with 8 threads. The lab benchmarks the identical first 25.0 seconds on Large-v3-Turbo Q5_0 across ARMv9 vs ARMv8.6, 6/7/8 threads, Flash Attention, audio_ctx 1344/1280, and a fast-core affinity experiment. Streaming is intentionally unchanged."
-          bash .github/speechnotes-progress.sh release done "speechnotes-v1.7.0 published with APK asset"
+            --title "Speech Notes v1.8.0" \
+            --notes "Encoder Performance Lab. Vulkan remains removed. CI creates an official Large-v3-Turbo Q4_0 model using whisper.cpp v1.9.1 whisper-quantize. The APK contains stock android_armv9.0_1 and a separately loadable android_armv9.0_1_kai backend using KleidiAI, allowing controlled Q5_0/Q4_0, stock/KleidiAI, audio_ctx and fast-core affinity A/B tests on the identical first 25.0 seconds. Each result card includes the recognized transcript so speed/quality trade-offs remain visible. Streaming is intentionally unchanged."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.0 published with APK asset"
 
       - name: Record build status
         if: always()
@@ -182,9 +221,14 @@ jobs:
               echo "Speech Notes CI failure diagnostics"
               echo "source_commit=$BUILD_SHA"
               echo
+              if [ -f /tmp/quantize-q4.log ]; then
+                echo "===== Q4 QUANTIZE TAIL ====="
+                tail -n 120 /tmp/quantize-q4.log
+              fi
+              echo
               if [ -f /tmp/speechnotes-gradle.log ]; then
                 echo "===== GRADLE TAIL ====="
-                tail -n 260 /tmp/speechnotes-gradle.log
+                tail -n 300 /tmp/speechnotes-gradle.log
               else
                 echo "No Gradle log was produced; failure occurred before Gradle build."
               fi
