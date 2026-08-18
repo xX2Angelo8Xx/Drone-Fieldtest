@@ -8,11 +8,21 @@ def replace_once(path: str, old: str, new: str):
         raise SystemExit(f'Expected block not found in {path}: {old[:100]!r}')
     p.write_text(s.replace(old, new, 1))
 
+
+def replace_count(path: str, old: str, new: str, expected: int):
+    p = Path(path)
+    s = p.read_text()
+    count = s.count(old)
+    if count != expected:
+        raise SystemExit(f'Expected {expected} occurrences in {path}, found {count}: {old[:100]!r}')
+    p.write_text(s.replace(old, new))
+
 main = 'SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/MainActivity.java'
-replace_once(
+replace_count(
     main,
-    'boolean loaded = WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath());',
-    'boolean loaded = WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath(), WhisperBridge.BACKEND_GENERIC);'
+    'WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath())',
+    'WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath(), WhisperBridge.BACKEND_GENERIC)',
+    2
 )
 replace_once(
     main,
@@ -26,10 +36,11 @@ replace_once(
 )
 
 service = 'SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/RecordingService.java'
-replace_once(
+replace_count(
     service,
-    'if (!WhisperBridge.isModelLoaded(modelFile.getAbsolutePath())) {',
-    'if (!WhisperBridge.isModelLoaded(modelFile.getAbsolutePath(), WhisperBridge.BACKEND_GENERIC)) {'
+    'WhisperBridge.isModelLoaded(modelFile.getAbsolutePath())',
+    'WhisperBridge.isModelLoaded(modelFile.getAbsolutePath(), WhisperBridge.BACKEND_GENERIC)',
+    2
 )
 replace_once(
     service,
