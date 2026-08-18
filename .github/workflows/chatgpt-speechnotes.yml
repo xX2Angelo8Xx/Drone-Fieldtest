@@ -16,10 +16,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      SPEECHNOTES_SOURCE_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: chatgpt-whisper-dictation-v1
+
+      - name: Initialize live progress
+        run: bash .github/speechnotes-progress.sh initialize running "Runner started; source checkout complete"
 
       - uses: actions/setup-java@v4
         with:
@@ -30,13 +35,19 @@ jobs:
 
       - name: Install Android SDK components
         run: |
+          bash .github/speechnotes-progress.sh android_sdk running "Installing Android 35, NDK 27 and CMake 3.22.1"
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+          bash .github/speechnotes-progress.sh android_sdk done "Android SDK components ready"
 
       - name: Install and stage Vulkan build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y glslc libvulkan-dev spirv-headers
+          set -euo pipefail
+          bash .github/speechnotes-progress.sh vulkan_deps running "apt update started (hard timeout 4 min)"
+          timeout 240s sudo apt-get -o Acquire::Retries=3 update
+          bash .github/speechnotes-progress.sh vulkan_deps running "apt install glslc/libvulkan-dev/spirv-headers (hard timeout 5 min)"
+          timeout 300s sudo apt-get -o Acquire::Retries=3 install -y glslc libvulkan-dev spirv-headers
+          bash .github/speechnotes-progress.sh vulkan_deps running "Packages installed; staging Khronos headers"
           test -f /usr/include/vulkan/vulkan.hpp
           command -v glslc
           ls -d /usr/share/cmake/SPIRV-Headers
@@ -44,6 +55,7 @@ jobs:
           mkdir -p SpeechNotes/app/src/main/cpp/vulkan-headers/include
           cp -a /usr/include/vulkan SpeechNotes/app/src/main/cpp/vulkan-headers/include/
           test -f SpeechNotes/app/src/main/cpp/vulkan-headers/include/vulkan/vulkan.hpp
+          bash .github/speechnotes-progress.sh vulkan_deps done "Vulkan dependencies and vulkan.hpp staged"
 
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -52,12 +64,17 @@ jobs:
 
       - name: Fetch pinned whisper.cpp
         run: |
+          bash .github/speechnotes-progress.sh whisper_source running "Cloning whisper.cpp v1.9.1"
           cd SpeechNotes
           rm -rf app/src/main/cpp/whispercpp
           git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp app/src/main/cpp/whispercpp
+          cd ..
+          bash .github/speechnotes-progress.sh whisper_source done "whisper.cpp v1.9.1 fetched"
 
       - name: Extend pinned whisper.cpp timing API
-        run: python3 .github/patch_speechnotes_whisper_timings.py
+        run: |
+          bash .github/speechnotes-progress.sh patches running "Applying timing instrumentation"
+          python3 .github/patch_speechnotes_whisper_timings.py
 
       - name: Add benchmark navigation to MainActivity
         run: python3 .github/patch_speechnotes_benchmark_tab.py
@@ -66,10 +83,13 @@ jobs:
         run: python3 .github/patch_speechnotes_v150_runtime.py
 
       - name: Apply Vulkan benchmark runtime
-        run: python3 .github/patch_speechnotes_v160_vulkan.py
+        run: |
+          python3 .github/patch_speechnotes_v160_vulkan.py
+          bash .github/speechnotes-progress.sh patches done "Timing, benchmark, ARM Best and Vulkan runtime patches applied"
 
       - name: Download bundled Base and Large-v3-Turbo models
         run: |
+          bash .github/speechnotes-progress.sh models running "Downloading and verifying bundled Whisper models"
           cd SpeechNotes
           rm -rf app/src/main/assets/models
           mkdir -p app/src/main/assets/models
@@ -77,21 +97,52 @@ jobs:
           curl -fL --retry 4 -o app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
           echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
           echo "e050f7970618a659205450ad97eb95a18d69c9ee  app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
+          cd ..
+          bash .github/speechnotes-progress.sh models done "Both models downloaded and hashes verified"
 
       - name: Restore persistent showcase signing key
         run: |
+          bash .github/speechnotes-progress.sh signing running "Restoring persistent APK signing key"
           base64 -d .github/speechnotes-showcase.jks.b64 > SpeechNotes/showcase-release.jks
           keytool -list -keystore SpeechNotes/showcase-release.jks -storepass chatgpt-showcase -alias speechnotes
+          bash .github/speechnotes-progress.sh signing done "Signing key verified"
 
-      - name: Build signed release APK
-        working-directory: SpeechNotes
+      - name: Build signed release APK with live heartbeat
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleRelease 2>&1 | tee /tmp/speechnotes-gradle.log
+          bash .github/speechnotes-progress.sh native_build running "Gradle/CMake/Vulkan build starting; heartbeat every 60 s"
+          rm -f /tmp/speechnotes-gradle.log
+          (
+            cd SpeechNotes
+            gradle --no-daemon :app:assembleRelease
+          ) 2>&1 | tee /tmp/speechnotes-gradle.log &
+          BUILD_PID=$!
+          (
+            while kill -0 "$BUILD_PID" 2>/dev/null; do
+              sleep 60
+              if kill -0 "$BUILD_PID" 2>/dev/null; then
+                LAST_LINE="$(tail -n 1 /tmp/speechnotes-gradle.log 2>/dev/null | tr '\n' ' ' | cut -c1-180)"
+                bash .github/speechnotes-progress.sh native_build running "Gradle active: ${LAST_LINE:-waiting for output}" /tmp/speechnotes-gradle.log
+              fi
+            done
+          ) &
+          HEARTBEAT_PID=$!
+          set +e
+          wait "$BUILD_PID"
+          BUILD_RC=$?
+          set -e
+          kill "$HEARTBEAT_PID" 2>/dev/null || true
+          wait "$HEARTBEAT_PID" 2>/dev/null || true
+          if [ "$BUILD_RC" -ne 0 ]; then
+            bash .github/speechnotes-progress.sh native_build failed "Gradle/CMake build failed with rc=$BUILD_RC" /tmp/speechnotes-gradle.log
+            exit "$BUILD_RC"
+          fi
+          bash .github/speechnotes-progress.sh native_build done "Gradle/CMake/Vulkan build completed" /tmp/speechnotes-gradle.log
 
       - name: Inspect APK CPU and Vulkan backends
         run: |
           set -o pipefail
+          bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature and packaged CPU/Vulkan backends"
           {
             cd SpeechNotes
             ls -lh app/build/outputs/apk/release/app-release.apk
@@ -104,6 +155,7 @@ jobs:
             $ANDROID_HOME/build-tools/35.0.0/aapt dump xmltree app/build/outputs/apk/release/app-release.apk AndroidManifest.xml | grep -A2 extractNativeLibs
             cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.6.0.apk
           } 2>&1 | tee /tmp/speechnotes-inspect.log
+          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; ARMv8, ARMv9 and Vulkan libraries verified" /tmp/speechnotes-inspect.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -117,19 +169,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.6.0"
           gh release delete speechnotes-v1.6.0 --yes --cleanup-tag || true
           gh release create speechnotes-v1.6.0 \
             SpeechNotes-1.6.0.apk#SpeechNotes-1.6.0.apk \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --target "$SPEECHNOTES_SOURCE_SHA" \
             --title "Speech Notes v1.6.0" \
             --notes "Vulkan performance-lab release. Normal Large-v3-Turbo dictation now uses ARM Best with 8 threads by default. Benchmark adds ARM Best CPU vs Vulkan GPU using the identical first 25.0 seconds, German language, no-context and the same Q5_0 model. Vulkan mode retains ARM Best as CPU fallback and fails cleanly if the Vulkan backend cannot initialize."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v1.6.0 published with APK asset"
 
       - name: Record build status
         if: always()
         env:
           BUILD_STATUS: ${{ job.status }}
-          BUILD_SHA: ${{ github.sha }}
+          BUILD_SHA: ${{ env.SPEECHNOTES_SOURCE_SHA }}
         run: |
           printf 'status=%s\nsource_commit=%s\nrecorded_utc=%s\n' \
             "$BUILD_STATUS" "$BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
