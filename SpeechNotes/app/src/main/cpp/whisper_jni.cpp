@@ -8,12 +8,17 @@
 #include <mutex>
 #include <sstream>
 #include "whisper.h"
+#include "ggml-backend.h"
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "SpeechNotesJNI", __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  "SpeechNotesJNI", __VA_ARGS__)
 
 static std::mutex g_mutex;
 static whisper_context * g_ctx = nullptr;
+static ggml_backend_reg_t g_cpu_backend = nullptr;
 static std::string g_model_path;
+static std::string g_backend_mode;
+static std::string g_backend_name;
 static long long g_model_load_ms = 0;
 
 static std::string jstr(JNIEnv *env, jstring s) {
@@ -29,18 +34,88 @@ static long long elapsed_ms(std::chrono::steady_clock::time_point start) {
             std::chrono::steady_clock::now() - start).count();
 }
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_com_chatgpt_speechnotes_WhisperBridge_loadModel(
-        JNIEnv *env, jclass, jstring modelPathJ) {
-    const std::string modelPath = jstr(env, modelPathJ);
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_ctx && g_model_path == modelPath) return 0;
+static std::string join_path(const std::string &dir, const std::string &file) {
+    if (dir.empty()) return file;
+    if (dir.back() == '/') return dir + file;
+    return dir + "/" + file;
+}
 
+static void free_model_locked() {
     if (g_ctx) {
         whisper_free(g_ctx);
         g_ctx = nullptr;
-        g_model_path.clear();
-        g_model_load_ms = 0;
+    }
+    g_model_path.clear();
+    g_model_load_ms = 0;
+}
+
+static void unload_backend_locked() {
+    if (g_cpu_backend) {
+        ggml_backend_unload(g_cpu_backend);
+        g_cpu_backend = nullptr;
+    }
+    g_backend_mode.clear();
+    g_backend_name.clear();
+}
+
+static bool try_backend_locked(const std::string &dir, const std::string &tag) {
+    const std::string path = join_path(dir, "libggml-cpu-" + tag + ".so");
+    ggml_backend_reg_t reg = ggml_backend_load(path.c_str());
+    if (!reg) return false;
+    g_cpu_backend = reg;
+    g_backend_name = tag;
+    LOGI("Loaded CPU backend: %s", tag.c_str());
+    return true;
+}
+
+static bool load_cpu_backend_locked(const std::string &dir, const std::string &mode) {
+    unload_backend_locked();
+
+    if (mode == "best") {
+        // Highest feature set first. ggml_backend_load() evaluates the backend's
+        // safe feature-detection score and returns null for unsupported variants.
+        static const char * candidates[] = {
+            "android_armv9.2_2",
+            "android_armv9.2_1",
+            "android_armv9.0_1",
+            "android_armv8.6_1",
+            "android_armv8.2_2",
+            "android_armv8.2_1",
+            "android_armv8.0_1"
+        };
+        for (const char * tag : candidates) {
+            if (try_backend_locked(dir, tag)) {
+                g_backend_mode = mode;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Conservative benchmark / normal-app baseline.
+    if (try_backend_locked(dir, "android_armv8.0_1")) {
+        g_backend_mode = "generic";
+        return true;
+    }
+    return false;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_chatgpt_speechnotes_WhisperBridge_loadModel(
+        JNIEnv *env, jclass, jstring modelPathJ, jstring backendDirJ, jstring backendModeJ) {
+    const std::string modelPath = jstr(env, modelPathJ);
+    const std::string backendDir = jstr(env, backendDirJ);
+    std::string backendMode = jstr(env, backendModeJ);
+    if (backendMode.empty()) backendMode = "generic";
+
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_ctx && g_model_path == modelPath && g_backend_mode == backendMode) return 0;
+
+    free_model_locked();
+    unload_backend_locked();
+    if (!load_cpu_backend_locked(backendDir, backendMode)) {
+        LOGE("Could not load CPU backend mode=%s dir=%s", backendMode.c_str(), backendDir.c_str());
+        return -2;
     }
 
     whisper_context_params cparams = whisper_context_default_params();
@@ -52,6 +127,7 @@ Java_com_chatgpt_speechnotes_WhisperBridge_loadModel(
     if (!g_ctx) {
         LOGE("Could not load model: %s", modelPath.c_str());
         g_model_load_ms = 0;
+        unload_backend_locked();
         return -1;
     }
     g_model_path = modelPath;
@@ -61,24 +137,30 @@ Java_com_chatgpt_speechnotes_WhisperBridge_loadModel(
 extern "C" JNIEXPORT void JNICALL
 Java_com_chatgpt_speechnotes_WhisperBridge_unloadModel(JNIEnv *, jclass) {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_ctx) whisper_free(g_ctx);
-    g_ctx = nullptr;
-    g_model_path.clear();
-    g_model_load_ms = 0;
+    free_model_locked();
+    unload_backend_locked();
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_chatgpt_speechnotes_WhisperBridge_isModelLoaded(
-        JNIEnv *env, jclass, jstring modelPathJ) {
+        JNIEnv *env, jclass, jstring modelPathJ, jstring backendModeJ) {
     const std::string modelPath = jstr(env, modelPathJ);
+    std::string backendMode = jstr(env, backendModeJ);
+    if (backendMode.empty()) backendMode = "generic";
     std::lock_guard<std::mutex> lock(g_mutex);
-    return (g_ctx && g_model_path == modelPath) ? JNI_TRUE : JNI_FALSE;
+    return (g_ctx && g_model_path == modelPath && g_backend_mode == backendMode) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_chatgpt_speechnotes_WhisperBridge_currentModelLoadMs(JNIEnv *, jclass) {
     std::lock_guard<std::mutex> lock(g_mutex);
     return (jlong) g_model_load_ms;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_chatgpt_speechnotes_WhisperBridge_currentBackendName(JNIEnv *env, jclass) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return env->NewStringUTF(g_backend_name.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
