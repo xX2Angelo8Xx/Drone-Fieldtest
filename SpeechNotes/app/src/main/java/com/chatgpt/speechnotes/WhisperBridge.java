@@ -8,6 +8,9 @@ public final class WhisperBridge {
     public static final String BACKEND_BEST = "best";
 
     public static final class Result {
+        // Compatibility alias for diagnostics/export code: Result already contains
+        // the parsed timing profile fields directly, so profile simply refers to self.
+        public final Result profile = this;
         public String text = "";
         public long pcmMs;
         public long whisperMs;
