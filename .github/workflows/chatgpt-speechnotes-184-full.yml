@@ -1,0 +1,11 @@
+name: Speech Notes v1.8.4 Full Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/chatgpt-speechnotes.yml
