@@ -1,7 +1,7 @@
 source_commit=c0b6d89c1f79306a81ea9e6d7044e0c9c96711cc
 run_id=32193074039
 run_attempt=1
-phase=whisper_source
-state=done
-updated_utc=2026-08-18T22:32:15Z
-detail=whisper.cpp v1.9.1 fetched
+phase=patches
+state=running
+updated_utc=2026-08-18T22:32:16Z
+detail=Applying v1.8.4 recording pipeline fix and crash diagnostics
