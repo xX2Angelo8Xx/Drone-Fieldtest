@@ -33,6 +33,14 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
 
+      - name: Install Vulkan build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslc libvulkan-dev spirv-headers
+          test -f /usr/include/vulkan/vulkan.hpp
+          command -v glslc
+          ls -d /usr/share/cmake/SPIRV-Headers
+
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -50,8 +58,11 @@ jobs:
       - name: Add benchmark navigation to MainActivity
         run: python3 .github/patch_speechnotes_benchmark_tab.py
 
-      - name: Apply v1.5 runtime defaults
+      - name: Apply ARM Best runtime defaults
         run: python3 .github/patch_speechnotes_v150_runtime.py
+
+      - name: Apply Vulkan benchmark runtime
+        run: python3 .github/patch_speechnotes_v160_vulkan.py
 
       - name: Download bundled Base and Large-v3-Turbo models
         run: |
@@ -62,7 +73,6 @@ jobs:
           curl -fL --retry 4 -o app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
           echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
           echo "e050f7970618a659205450ad97eb95a18d69c9ee  app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
-          ls -lh app/src/main/assets/models/
 
       - name: Restore persistent showcase signing key
         run: |
@@ -75,7 +85,7 @@ jobs:
           set -o pipefail
           gradle --no-daemon :app:assembleRelease 2>&1 | tee /tmp/speechnotes-gradle.log
 
-      - name: Inspect APK and ARM backends
+      - name: Inspect APK CPU and Vulkan backends
         run: |
           set -o pipefail
           {
@@ -83,18 +93,19 @@ jobs:
             ls -lh app/build/outputs/apk/release/app-release.apk
             $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
             sha256sum app/build/outputs/apk/release/app-release.apk
-            unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep 'lib/arm64-v8a/libggml-cpu-android_arm'
+            unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep 'lib/arm64-v8a/libggml'
             grep -q 'libggml-cpu-android_armv8.0_1.so' /tmp/apk-files.txt
-            grep -q 'libggml-cpu-android_armv8.6_1.so' /tmp/apk-files.txt
+            grep -q 'libggml-cpu-android_armv9.0_1.so' /tmp/apk-files.txt
+            grep -q 'libggml-vulkan.so' /tmp/apk-files.txt
             $ANDROID_HOME/build-tools/35.0.0/aapt dump xmltree app/build/outputs/apk/release/app-release.apk AndroidManifest.xml | grep -A2 extractNativeLibs
-            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.5.1.apk
+            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.6.0.apk
           } 2>&1 | tee /tmp/speechnotes-inspect.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.5.1-arm64
-          path: SpeechNotes-1.5.1.apk
+          name: SpeechNotes-v1.6.0-arm64
+          path: SpeechNotes-1.6.0.apk
           compression-level: 0
           retention-days: 14
 
@@ -102,13 +113,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete speechnotes-v1.5.1 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.5.1 \
-            SpeechNotes-1.5.1.apk#SpeechNotes-1.5.1.apk \
+          gh release delete speechnotes-v1.6.0 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.6.0 \
+            SpeechNotes-1.6.0.apk#SpeechNotes-1.6.0.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Speech Notes v1.5.1" \
-            --notes "Android dynamic CPU-backend loader fix. Forces native libraries to be extracted to ApplicationInfo.nativeLibraryDir so ggml_backend_load can dlopen the packaged Generic and ARM-optimized CPU variants by absolute path. Keeps v1.5.0 performance-lab behavior: Turbo 8-thread default, 25-second deterministic benchmark input, Threading and Generic-vs-ARM-Best suites."
+            --title "Speech Notes v1.6.0" \
+            --notes "Vulkan performance-lab release. Normal Large-v3-Turbo dictation now uses ARM Best with 8 threads by default. Benchmark adds ARM Best CPU vs Vulkan GPU using the identical first 25.0 seconds, German language, no-context and the same Q5_0 model. Vulkan mode retains ARM Best as CPU fallback and fails cleanly if the Vulkan backend cannot initialize."
 
       - name: Record build status
         if: always()
@@ -126,7 +137,7 @@ jobs:
               echo
               if [ -f /tmp/speechnotes-gradle.log ]; then
                 echo "===== GRADLE TAIL ====="
-                tail -n 180 /tmp/speechnotes-gradle.log
+                tail -n 220 /tmp/speechnotes-gradle.log
               else
                 echo "No Gradle log was produced; failure occurred before Gradle build."
               fi
