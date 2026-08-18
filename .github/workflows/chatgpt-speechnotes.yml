@@ -33,13 +33,17 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
 
-      - name: Install Vulkan build dependencies
+      - name: Install and stage Vulkan build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y glslc libvulkan-dev spirv-headers
           test -f /usr/include/vulkan/vulkan.hpp
           command -v glslc
           ls -d /usr/share/cmake/SPIRV-Headers
+          rm -rf SpeechNotes/app/src/main/cpp/vulkan-headers
+          mkdir -p SpeechNotes/app/src/main/cpp/vulkan-headers/include
+          cp -a /usr/include/vulkan SpeechNotes/app/src/main/cpp/vulkan-headers/include/
+          test -f SpeechNotes/app/src/main/cpp/vulkan-headers/include/vulkan/vulkan.hpp
 
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
