@@ -1,7 +1,7 @@
 source_commit=d839c6d6862c1a2d395b185a18b8e47b8f873c45
 run_id=32190820584
 run_attempt=1
-phase=signing
-state=done
-updated_utc=2026-08-18T22:07:04Z
-detail=Signing key restored
+phase=native_build
+state=running
+updated_utc=2026-08-18T22:07:06Z
+detail=v1.8.3 Gradle+CMake build starting
