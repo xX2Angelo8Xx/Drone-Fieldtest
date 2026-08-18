@@ -1,0 +1,12 @@
+name: Trigger Speech Notes v1.8.4
+on:
+  push:
+    branches: [ chatgpt-whisper-dictation-v1 ]
+permissions:
+  contents: read
+jobs:
+  marker:
+    if: contains(github.event.head_commit.message, 'Speech Notes v1.8.4 build')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "v1.8.4 trigger marker"
