@@ -1,7 +1,7 @@
 source_commit=6faff2dfbcf6a7994ed3a7e452a979153ef2bb60
 run_id=32090795332
 run_attempt=1
-phase=patches
-state=done
-updated_utc=2026-08-18T02:10:23Z
-detail=CPU-only v1.7 performance lab patches applied
+phase=models
+state=running
+updated_utc=2026-08-18T02:10:24Z
+detail=Downloading and verifying bundled Whisper models
