@@ -1,7 +1,7 @@
 source_commit=f7eea78d78ebc23c6f4d037ab393c5363fdf691f
 run_id=32133848461
 run_attempt=1
-phase=patches
-state=done
-updated_utc=2026-08-18T11:53:27Z
-detail=v1.8 Q4/KleidiAI encoder lab patches applied
+phase=quantizer_build
+state=running
+updated_utc=2026-08-18T11:53:28Z
+detail=Building whisper.cpp v1.9.1 host whisper-quantize tool
