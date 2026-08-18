@@ -1,10 +1,7 @@
 source_commit=f7eea78d78ebc23c6f4d037ab393c5363fdf691f
 run_id=32133848461
 run_attempt=1
-phase=models
-state=done
-updated_utc=2026-08-18T11:55:24Z
-detail=Q5 models verified and source Turbo model downloaded
-
-===== LIVE LOG TAIL =====
-1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69  /tmp/ggml-large-v3-turbo.bin
+phase=quantize_q4
+state=running
+updated_utc=2026-08-18T11:55:25Z
+detail=Quantizing official Large-v3-Turbo source model to Q4_0 with v1.9.1
