@@ -1,7 +1,7 @@
 source_commit=828daf7d868d79341321d246587fafb98bb8b115
 run_id=32089411410
 run_attempt=1
-phase=models
-state=done
-updated_utc=2026-08-18T01:48:43Z
-detail=Both models downloaded and hashes verified
+phase=signing
+state=running
+updated_utc=2026-08-18T01:48:44Z
+detail=Restoring persistent APK signing key
