@@ -14,13 +14,13 @@ set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
 set(GGML_CPU ON CACHE BOOL "" FORCE)
 
 # Experimental Vulkan backend for the reproducible ARM-Best vs Vulkan suite.
-# CI stages a copy of the Khronos C/C++ headers under this source tree so the
-# Android cross-compiler can resolve <vulkan/vulkan.hpp> without adding the
-# whole host /usr/include tree to an Android target.
+# CI stages Khronos Vulkan + SPIR-V headers under this source tree so the
+# Android cross-compiler can resolve both <vulkan/vulkan.hpp> and
+# <spirv/unified1/spirv.hpp> without adding the host /usr/include tree.
 set(GGML_VULKAN ON CACHE BOOL "" FORCE)
-set(SN_VULKAN_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/vulkan-headers/include")
-if(EXISTS "${SN_VULKAN_HEADERS}/vulkan/vulkan.hpp")
-    set(Vulkan_INCLUDE_DIR "${SN_VULKAN_HEADERS}" CACHE PATH "" FORCE)
+set(SN_KHRONOS_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/vulkan-headers/include")
+if(EXISTS "${SN_KHRONOS_HEADERS}/vulkan/vulkan.hpp")
+    set(Vulkan_INCLUDE_DIR "${SN_KHRONOS_HEADERS}" CACHE PATH "" FORCE)
 endif()
 if(EXISTS "/usr/bin/glslc")
     set(Vulkan_GLSLC_EXECUTABLE "/usr/bin/glslc" CACHE FILEPATH "" FORCE)
@@ -41,11 +41,12 @@ endif()
 
 add_subdirectory(whispercpp whisper-build EXCLUDE_FROM_ALL)
 
-# ggml-vulkan is created inside whisper.cpp. Explicitly attach only the staged
-# Khronos header directory to the Android target; this fixes vulkan.hpp while
-# keeping host libc/libstdc++ headers out of the target include search path.
-if(TARGET ggml-vulkan AND EXISTS "${SN_VULKAN_HEADERS}/vulkan/vulkan.hpp")
-    target_include_directories(ggml-vulkan PRIVATE "${SN_VULKAN_HEADERS}")
+# ggml-vulkan is created inside whisper.cpp. Attach only the staged Khronos
+# header root to the Android target; it contains vulkan/ and spirv/.
+if(TARGET ggml-vulkan
+   AND EXISTS "${SN_KHRONOS_HEADERS}/vulkan/vulkan.hpp"
+   AND EXISTS "${SN_KHRONOS_HEADERS}/spirv/unified1/spirv.hpp")
+    target_include_directories(ggml-vulkan SYSTEM PRIVATE "${SN_KHRONOS_HEADERS}")
 endif()
 
 add_library(whisper_jni SHARED whisper_jni.cpp)
