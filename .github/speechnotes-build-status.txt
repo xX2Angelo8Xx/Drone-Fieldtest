@@ -1,3 +1,3 @@
-status=success
-source_commit=f7eea78d78ebc23c6f4d037ab393c5363fdf691f
-recorded_utc=2026-08-18T11:59:37Z
+status=failure
+source_commit=cd99a2dad673b1d7dde201b9670d55b8f0f5904c
+recorded_utc=2026-08-18T20:30:28Z
