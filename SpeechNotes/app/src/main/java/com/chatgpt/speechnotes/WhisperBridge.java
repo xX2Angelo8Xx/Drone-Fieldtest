@@ -4,6 +4,9 @@ public final class WhisperBridge {
     static { System.loadLibrary("whisper_jni"); }
     private WhisperBridge() {}
 
+    public static final String BACKEND_GENERIC = "generic";
+    public static final String BACKEND_BEST = "best";
+
     public static final class Result {
         public String text = "";
         public long pcmMs;
@@ -28,10 +31,11 @@ public final class WhisperBridge {
         public int promptRuns;
     }
 
-    public static native long loadModel(String modelPath);
+    public static native long loadModel(String modelPath, String nativeLibraryDir, String backendMode);
     public static native void unloadModel();
-    public static native boolean isModelLoaded(String modelPath);
+    public static native boolean isModelLoaded(String modelPath, String backendMode);
     public static native long currentModelLoadMs();
+    public static native String currentBackendName();
 
     private static native String transcribeLoadedRaw(
             String pcmPath, String language, String initialPrompt, int threads, boolean noContext);
