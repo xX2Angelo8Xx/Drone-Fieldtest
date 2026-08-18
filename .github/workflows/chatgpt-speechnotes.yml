@@ -53,7 +53,7 @@ jobs:
 
       - name: Apply Speech Notes patches
         run: |
-          bash .github/speechnotes-progress.sh patches running "Applying v1.8.4 recording pipeline fix and crash diagnostics"
+          bash .github/speechnotes-progress.sh patches running "Applying v1.8.5 runtime-session unification and recording guard fix"
           python3 .github/patch_speechnotes_whisper_timings.py
           python3 .github/patch_speechnotes_benchmark_tab.py
           python3 .github/patch_speechnotes_v150_runtime.py
@@ -63,7 +63,8 @@ jobs:
           python3 .github/patch_speechnotes_v182_diagnostics.py
           python3 .github/patch_speechnotes_v183_trigger_lab.py
           python3 .github/patch_speechnotes_v184_recording_fix.py
-          bash .github/speechnotes-progress.sh patches done "Centralized runtime + recording lifecycle diagnostics applied"
+          python3 .github/patch_speechnotes_v185_runtime_session.py
+          bash .github/speechnotes-progress.sh patches done "Unified native runtime state + self-healing recording guards applied"
 
       - name: Build host quantizer
         run: |
@@ -107,15 +108,23 @@ jobs:
       - name: Build signed release APK
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh native_build running "v1.8.4 Gradle+CMake build starting"
+          bash .github/speechnotes-progress.sh native_build running "v1.8.5 Gradle+CMake build starting"
           rm -f /tmp/speechnotes-gradle.log
           (cd SpeechNotes && gradle --no-daemon :app:assembleRelease) 2>&1 | tee /tmp/speechnotes-gradle.log
-          bash .github/speechnotes-progress.sh native_build done "v1.8.4 Gradle+CMake build completed" /tmp/speechnotes-gradle.log
+          bash .github/speechnotes-progress.sh native_build done "v1.8.5 Gradle+CMake build completed" /tmp/speechnotes-gradle.log
+
+      - name: Android lint review gate
+        run: |
+          set -o pipefail
+          bash .github/speechnotes-progress.sh lint_review running "Running Android lint review before streaming work"
+          rm -f /tmp/speechnotes-lint.log
+          (cd SpeechNotes && gradle --no-daemon :app:lintRelease) 2>&1 | tee /tmp/speechnotes-lint.log
+          bash .github/speechnotes-progress.sh lint_review done "Android lint review passed" /tmp/speechnotes-lint.log
 
       - name: Inspect APK
         run: |
           set -euo pipefail
-          bash .github/speechnotes-progress.sh apk_inspect running "Verifying v1.8.4 APK contents"
+          bash .github/speechnotes-progress.sh apk_inspect running "Verifying v1.8.5 APK contents"
           cd SpeechNotes
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
           unzip -l app/build/outputs/apk/release/app-release.apk > /tmp/apk-files.txt
@@ -123,14 +132,14 @@ jobs:
           grep -q 'libggml-cpu-android_armv9.0_1_kai.so' /tmp/apk-files.txt
           grep -q 'assets/models/ggml-large-v3-turbo-q4_0.bin' /tmp/apk-files.txt
           ! grep -q 'libggml-vulkan.so' /tmp/apk-files.txt
-          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.4.apk
+          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.5.apk
           cd ..
-          bash .github/speechnotes-progress.sh apk_inspect done "Signed v1.8.4 APK verified; Q4 + ARMv9 + KAI present; Vulkan absent"
+          bash .github/speechnotes-progress.sh apk_inspect done "Signed v1.8.5 APK verified; Q4 + ARMv9 + KAI present; Vulkan absent"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.8.4-arm64
-          path: SpeechNotes-1.8.4.apk
+          name: SpeechNotes-v1.8.5-arm64
+          path: SpeechNotes-1.8.5.apk
           compression-level: 0
           retention-days: 14
 
@@ -138,10 +147,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.4"
-          gh release delete speechnotes-v1.8.4 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.8.4 SpeechNotes-1.8.4.apk#SpeechNotes-1.8.4.apk --repo "$GITHUB_REPOSITORY" --target "$SPEECHNOTES_SOURCE_SHA" --title "Speech Notes v1.8.4" --notes "Recording-pipeline stabilization release before streaming work. Productive runtime is centralized as Q4_0 / stock ARMv9 / 4 threads / audio_ctx 1280 / no affinity. RecordingService now enters foreground immediately, validates the exact loaded runtime context, instruments every recording/transcription lifecycle stage, and persists the last stage plus Android ApplicationExitInfo for post-crash diagnosis. Existing v1.8.3 trigger benchmarks remain available. Streaming is intentionally unchanged and planned for the next development step."
-          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.4 published with APK asset"
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.5"
+          gh release delete speechnotes-v1.8.5 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.8.5 SpeechNotes-1.8.5.apk#SpeechNotes-1.8.5.apk --repo "$GITHUB_REPOSITORY" --target "$SPEECHNOTES_SOURCE_SHA" --title "Speech Notes v1.8.5" --notes "Pre-streaming prototype focused on runtime correctness. UI and RecordingService now share one native-backed SpeechRuntimeSession, with exact model-path/backend-mode introspection and self-healing context restoration if a benchmark or lifecycle transition changed the active Whisper context. The v1.8.4 recording guard mismatch is removed, package-install exits are filtered from crash diagnostics, and Android lint is enforced in CI. Productive default remains Large-v3-Turbo Q4_0 / stock ARMv9 / 4T / audio_ctx 1280 / no affinity. Streaming remains intentionally disabled in this build."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.5 published with APK asset"
 
       - name: Record build status
         if: always()
