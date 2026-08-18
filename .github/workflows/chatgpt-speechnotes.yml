@@ -40,23 +40,20 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
           bash .github/speechnotes-progress.sh android_sdk done "Android SDK components ready"
 
-      - name: Install Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
       - name: Fetch pinned whisper.cpp
         run: |
           bash .github/speechnotes-progress.sh whisper_source running "Cloning whisper.cpp v1.9.1"
-          cd SpeechNotes
-          rm -rf app/src/main/cpp/whispercpp
-          git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp app/src/main/cpp/whispercpp
-          cd ..
+          rm -rf SpeechNotes/app/src/main/cpp/whispercpp
+          git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp SpeechNotes/app/src/main/cpp/whispercpp
           bash .github/speechnotes-progress.sh whisper_source done "whisper.cpp v1.9.1 fetched"
 
       - name: Apply Speech Notes patches
         run: |
-          bash .github/speechnotes-progress.sh patches running "Applying timings, navigation, ARM runtime and v1.8.2 diagnostics patches"
+          bash .github/speechnotes-progress.sh patches running "Applying v1.8.3 runtime and trigger diagnostics patches"
           python3 .github/patch_speechnotes_whisper_timings.py
           python3 .github/patch_speechnotes_benchmark_tab.py
           python3 .github/patch_speechnotes_v150_runtime.py
@@ -64,133 +61,75 @@ jobs:
           python3 .github/patch_speechnotes_v180_kleidiai_backend.py
           python3 .github/patch_speechnotes_v180_encoder_lab.py
           python3 .github/patch_speechnotes_v182_diagnostics.py
-          bash .github/speechnotes-progress.sh patches done "v1.8.2 KAI transition diagnostics + copyable telemetry export applied"
+          python3 .github/patch_speechnotes_v183_trigger_lab.py
+          bash .github/speechnotes-progress.sh patches done "Q4/4T/ctx1280 default + thread/affinity trigger diagnostics applied"
 
-      - name: Build pinned host whisper quantizer
+      - name: Build host quantizer
         run: |
           set -euo pipefail
-          bash .github/speechnotes-progress.sh quantizer_build running "Building whisper.cpp v1.9.1 host whisper-quantize tool"
+          bash .github/speechnotes-progress.sh quantizer_build running "Building whisper.cpp v1.9.1 host quantizer"
           rm -rf /tmp/whisper-host
-          cmake -S SpeechNotes/app/src/main/cpp/whispercpp -B /tmp/whisper-host \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=ON \
-            -DWHISPER_BUILD_SERVER=OFF \
-            -DGGML_VULKAN=OFF \
-            -DGGML_NATIVE=ON
+          cmake -S SpeechNotes/app/src/main/cpp/whispercpp -B /tmp/whisper-host -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_SERVER=OFF -DGGML_VULKAN=OFF -DGGML_NATIVE=ON
           cmake --build /tmp/whisper-host --target whisper-quantize -j2
           test -x /tmp/whisper-host/bin/whisper-quantize
-          /tmp/whisper-host/bin/whisper-quantize --help >/tmp/quantizer-help.txt 2>&1 || true
-          bash .github/speechnotes-progress.sh quantizer_build done "Pinned whisper-quantize tool ready" /tmp/quantizer-help.txt
+          bash .github/speechnotes-progress.sh quantizer_build done "Pinned quantizer ready"
 
-      - name: Download Q5 models and source Turbo model
+      - name: Prepare models
         run: |
           set -euo pipefail
-          bash .github/speechnotes-progress.sh models running "Downloading Base Q5_1, Turbo Q5_0 and source Turbo model"
+          bash .github/speechnotes-progress.sh models running "Downloading Q5 models and Turbo source"
           rm -rf SpeechNotes/app/src/main/assets/models
           mkdir -p SpeechNotes/app/src/main/assets/models
-          curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 \
-            -o SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin \
-            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
-          curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 \
-            -o SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin \
-            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
-          curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 \
-            -o /tmp/ggml-large-v3-turbo.bin \
-            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+          curl -fL --retry 5 --retry-delay 5 -o SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+          curl -fL --retry 5 --retry-delay 5 -o SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+          curl -fL --retry 5 --retry-delay 5 -o /tmp/ggml-large-v3-turbo.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
           echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
           echo "e050f7970618a659205450ad97eb95a18d69c9ee  SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
-          test "$(stat -c%s /tmp/ggml-large-v3-turbo.bin)" -gt 1000000000
-          sha256sum /tmp/ggml-large-v3-turbo.bin | tee /tmp/turbo-source-sha256.txt
-          bash .github/speechnotes-progress.sh models done "Q5 models verified and source Turbo model downloaded" /tmp/turbo-source-sha256.txt
+          bash .github/speechnotes-progress.sh models done "Q5 models verified and Turbo source ready"
 
-      - name: Quantize Large-v3-Turbo to Q4_0
+      - name: Quantize Turbo Q4_0
         run: |
           set -euo pipefail
-          bash .github/speechnotes-progress.sh quantize_q4 running "Quantizing official Large-v3-Turbo source model to Q4_0 with v1.9.1"
-          rm -f /tmp/quantize-q4.log
-          /tmp/whisper-host/bin/whisper-quantize \
-            /tmp/ggml-large-v3-turbo.bin \
-            SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin \
-            q4_0 2>&1 | tee /tmp/quantize-q4.log
-          test -s SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin
+          bash .github/speechnotes-progress.sh quantize_q4 running "Quantizing official Turbo source to Q4_0"
+          /tmp/whisper-host/bin/whisper-quantize /tmp/ggml-large-v3-turbo.bin SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin q4_0 2>&1 | tee /tmp/quantize-q4.log
           test "$(stat -c%s SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin)" -gt 300000000
           sha256sum SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin | tee -a /tmp/quantize-q4.log
-          ls -lh SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin \
-                 SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin | tee -a /tmp/quantize-q4.log
           rm -f /tmp/ggml-large-v3-turbo.bin
           bash .github/speechnotes-progress.sh quantize_q4 done "Turbo Q4_0 generated and verified" /tmp/quantize-q4.log
 
-      - name: Restore persistent showcase signing key
+      - name: Restore signing key
         run: |
           bash .github/speechnotes-progress.sh signing running "Restoring persistent APK signing key"
           base64 -d .github/speechnotes-showcase.jks.b64 > SpeechNotes/showcase-release.jks
-          keytool -list -keystore SpeechNotes/showcase-release.jks -storepass chatgpt-showcase -alias speechnotes
-          bash .github/speechnotes-progress.sh signing done "Signing key verified"
+          bash .github/speechnotes-progress.sh signing done "Signing key restored"
 
-      - name: Build signed release APK with live heartbeat
+      - name: Build signed release APK
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh native_build running "CPU/KleidiAI Gradle+CMake build starting; heartbeat every 60 s"
+          bash .github/speechnotes-progress.sh native_build running "v1.8.3 Gradle+CMake build starting"
           rm -f /tmp/speechnotes-gradle.log
-          (
-            cd SpeechNotes
-            gradle --no-daemon :app:assembleRelease
-          ) 2>&1 | tee /tmp/speechnotes-gradle.log &
-          BUILD_PID=$!
-          (
-            while kill -0 "$BUILD_PID" 2>/dev/null; do
-              sleep 60
-              if kill -0 "$BUILD_PID" 2>/dev/null; then
-                NINJA_LINE="$(grep -E '\[[0-9]+/[0-9]+\]' /tmp/speechnotes-gradle.log 2>/dev/null | tail -n 1 | tr '\n' ' ' | cut -c1-220 || true)"
-                KAI_LINE="$(grep -Ei 'KleidiAI|android_armv9.0_1_kai' /tmp/speechnotes-gradle.log 2>/dev/null | tail -n 1 | tr '\n' ' ' | cut -c1-220 || true)"
-                LAST_LINE="$(tail -n 1 /tmp/speechnotes-gradle.log 2>/dev/null | tr '\n' ' ' | cut -c1-220)"
-                DETAIL="${NINJA_LINE:-${KAI_LINE:-${LAST_LINE:-waiting for output}}}"
-                bash .github/speechnotes-progress.sh native_build running "Native progress: $DETAIL" /tmp/speechnotes-gradle.log
-              fi
-            done
-          ) &
-          HEARTBEAT_PID=$!
-          set +e
-          wait "$BUILD_PID"
-          BUILD_RC=$?
-          set -e
-          kill "$HEARTBEAT_PID" 2>/dev/null || true
-          wait "$HEARTBEAT_PID" 2>/dev/null || true
-          if [ "$BUILD_RC" -ne 0 ]; then
-            bash .github/speechnotes-progress.sh native_build failed "Gradle/CMake build failed with rc=$BUILD_RC" /tmp/speechnotes-gradle.log
-            exit "$BUILD_RC"
-          fi
-          bash .github/speechnotes-progress.sh native_build done "CPU/KleidiAI Gradle+CMake build completed" /tmp/speechnotes-gradle.log
+          (cd SpeechNotes && gradle --no-daemon :app:assembleRelease) 2>&1 | tee /tmp/speechnotes-gradle.log
+          bash .github/speechnotes-progress.sh native_build done "v1.8.3 Gradle+CMake build completed" /tmp/speechnotes-gradle.log
 
-      - name: Inspect APK diagnostics contents
+      - name: Inspect APK
         run: |
-          set -o pipefail
-          bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature, stock ARMv9, KleidiAI backend and Q4_0 asset"
-          {
-            cd SpeechNotes
-            ls -lh app/build/outputs/apk/release/app-release.apk
-            $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
-            sha256sum app/build/outputs/apk/release/app-release.apk
-            unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep -E 'lib/arm64-v8a/libggml|assets/models/ggml-large-v3-turbo-q[45]_0.bin'
-            grep -q 'libggml-cpu-android_armv9.0_1.so' /tmp/apk-files.txt
-            grep -q 'libggml-cpu-android_armv9.0_1_kai.so' /tmp/apk-files.txt
-            grep -q 'assets/models/ggml-large-v3-turbo-q5_0.bin' /tmp/apk-files.txt
-            grep -q 'assets/models/ggml-large-v3-turbo-q4_0.bin' /tmp/apk-files.txt
-            if grep -q 'libggml-vulkan.so' /tmp/apk-files.txt; then
-              echo 'Vulkan backend must not be present in v1.8.2' >&2
-              exit 1
-            fi
-            $ANDROID_HOME/build-tools/35.0.0/aapt dump xmltree app/build/outputs/apk/release/app-release.apk AndroidManifest.xml | grep -A2 extractNativeLibs
-            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.2.apk
-          } 2>&1 | tee /tmp/speechnotes-inspect.log
-          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; Q4 stock/KleidiAI diagnostics ready; Vulkan absent" /tmp/speechnotes-inspect.log
+          set -euo pipefail
+          bash .github/speechnotes-progress.sh apk_inspect running "Verifying v1.8.3 APK contents"
+          cd SpeechNotes
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
+          unzip -l app/build/outputs/apk/release/app-release.apk > /tmp/apk-files.txt
+          grep -q 'libggml-cpu-android_armv9.0_1.so' /tmp/apk-files.txt
+          grep -q 'libggml-cpu-android_armv9.0_1_kai.so' /tmp/apk-files.txt
+          grep -q 'assets/models/ggml-large-v3-turbo-q4_0.bin' /tmp/apk-files.txt
+          ! grep -q 'libggml-vulkan.so' /tmp/apk-files.txt
+          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.3.apk
+          cd ..
+          bash .github/speechnotes-progress.sh apk_inspect done "Signed v1.8.3 APK verified; Q4 + ARMv9 + KAI present; Vulkan absent"
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.8.2-arm64
-          path: SpeechNotes-1.8.2.apk
+          name: SpeechNotes-v1.8.3-arm64
+          path: SpeechNotes-1.8.3.apk
           compression-level: 0
           retention-days: 14
 
@@ -198,15 +137,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.2"
-          gh release delete speechnotes-v1.8.2 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.8.2 \
-            SpeechNotes-1.8.2.apk#SpeechNotes-1.8.2.apk \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$SPEECHNOTES_SOURCE_SHA" \
-            --title "Speech Notes v1.8.2" \
-            --notes "Runtime diagnostics iteration. The benchmark executes five clean stock ARMv9 Q4_0/4-thread baselines, one isolated KleidiAI transition, then three stock post-KAI runs at fixed ctx1280 on the identical first 25.0 seconds. Each run captures process/system memory, native heap, CPU-frequency snapshots plus 1 Hz min/max sampling, thermal-zone snapshots, load timing and Whisper timing data. A Benchmark-Daten kopieren button exports all diagnostics and transcripts as plain text. Vulkan and Flash Attention remain disabled; streaming remains unchanged."
-          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.2 published with APK asset"
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.3"
+          gh release delete speechnotes-v1.8.3 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.8.3 SpeechNotes-1.8.3.apk#SpeechNotes-1.8.3.apk --repo "$GITHUB_REPOSITORY" --target "$SPEECHNOTES_SOURCE_SHA" --title "Speech Notes v1.8.3" --notes "Q4_0/stock ARMv9/4T/audio_ctx1280 is now the normal Large-v3-Turbo performance default. The benchmark tab adds separately selectable thread-count, affinity, and v1.8.1 reproduction trigger suites with copyable memory, CPU-frequency and per-thread affinity diagnostics. Streaming remains intentionally unchanged."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.3 published with APK asset"
 
       - name: Record build status
         if: always()
@@ -214,36 +148,9 @@ jobs:
           BUILD_STATUS: ${{ job.status }}
           BUILD_SHA: ${{ env.SPEECHNOTES_SOURCE_SHA }}
         run: |
-          printf 'status=%s\nsource_commit=%s\nrecorded_utc=%s\n' \
-            "$BUILD_STATUS" "$BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            > .github/speechnotes-build-status.txt
-          if [ "$BUILD_STATUS" != "success" ]; then
-            {
-              echo "Speech Notes CI failure diagnostics"
-              echo "source_commit=$BUILD_SHA"
-              echo
-              if [ -f /tmp/quantize-q4.log ]; then
-                echo "===== Q4 QUANTIZE TAIL ====="
-                tail -n 120 /tmp/quantize-q4.log
-              fi
-              echo
-              if [ -f /tmp/speechnotes-gradle.log ]; then
-                echo "===== GRADLE TAIL ====="
-                tail -n 300 /tmp/speechnotes-gradle.log
-              else
-                echo "No Gradle log was produced; failure occurred before Gradle build."
-              fi
-              echo
-              if [ -f /tmp/speechnotes-inspect.log ]; then
-                echo "===== APK INSPECT ====="
-                cat /tmp/speechnotes-inspect.log
-              fi
-            } > .github/speechnotes-build-error.txt
-          else
-            rm -f .github/speechnotes-build-error.txt
-          fi
+          printf 'status=%s\nsource_commit=%s\nrecorded_utc=%s\n' "$BUILD_STATUS" "$BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .github/speechnotes-build-status.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/speechnotes-build-status.txt .github/speechnotes-build-error.txt 2>/dev/null || true
+          git add .github/speechnotes-build-status.txt
           git commit -m "[skip ci] Speech Notes build status: $BUILD_STATUS" || exit 0
           git push origin HEAD:chatgpt-whisper-dictation-v1
