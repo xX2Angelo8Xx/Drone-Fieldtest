@@ -2,6 +2,40 @@ source_commit=828daf7d868d79341321d246587fafb98bb8b115
 run_id=32089411410
 run_attempt=1
 phase=apk_inspect
-state=running
-updated_utc=2026-08-18T01:53:12Z
-detail=Verifying signature and packaged CPU/Vulkan backends
+state=done
+updated_utc=2026-08-18T01:53:16Z
+detail=APK signed; ARMv8, ARMv9 and Vulkan libraries verified
+
+===== LIVE LOG TAIL =====
+-rw-r--r-- 1 runner runner 585M Aug 18 01:53 app/build/outputs/apk/release/app-release.apk
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Speech Notes ChatGPT Showcase, OU=Prototype, O=OpenAI Chat Showcase, L=Vienna, C=AT
+Signer #1 certificate SHA-256 digest: 05b2170b735333b5519cfa6887a5ca65befe0e5b06331b632fc0734c1e8e97b5
+Signer #1 certificate SHA-1 digest: 2b4a8ee8e00d6a90b767605592d70c557f21d63a
+Signer #1 certificate MD5 digest: e62977de949a2ce7d959f73e68f1893d
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: 16d3a5e36e124fb23f223f2fcd6010eab7028482a7ba62dcefbb63d7f9201c38
+Signer #1 public key SHA-1 digest: 4165f529cbfdb49effa77c36cee82789798de405
+Signer #1 public key MD5 digest: a63e8e4ff09d4b81f54c4a2b6d06e9b2
+ae7f93d1d9a88c99a4840ca704999d564ec6895d06ddcfc5384a78a0a0a35148  app/build/outputs/apk/release/app-release.apk
+   813560  1981-01-01 01:01   lib/arm64-v8a/libggml-base.so
+   795320  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv8.0_1.so
+   814632  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv8.2_1.so
+   814632  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv8.2_2.so
+   826512  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv8.6_1.so
+   845488  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv9.0_1.so
+   845488  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv9.2_1.so
+   845504  1981-01-01 01:01   lib/arm64-v8a/libggml-cpu-android_armv9.2_2.so
+ 62004544  1981-01-01 01:01   lib/arm64-v8a/libggml-vulkan.so
+    58256  1981-01-01 01:01   lib/arm64-v8a/libggml.so
+      A: android:extractNativeLibs(0x010104ea)=(type 0x12)0xffffffff
+      A: android:usesCleartextTraffic(0x010104ec)=(type 0x12)0x0
+      E: activity (line=24)
