@@ -40,26 +40,6 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
           bash .github/speechnotes-progress.sh android_sdk done "Android SDK components ready"
 
-      - name: Install and stage Vulkan build dependencies
-        run: |
-          set -euo pipefail
-          bash .github/speechnotes-progress.sh vulkan_deps running "apt update started (hard timeout 4 min)"
-          timeout 240s sudo apt-get -o Acquire::Retries=3 update
-          bash .github/speechnotes-progress.sh vulkan_deps running "apt install glslc/libvulkan-dev/spirv-headers (hard timeout 5 min)"
-          timeout 300s sudo apt-get -o Acquire::Retries=3 install -y glslc libvulkan-dev spirv-headers
-          bash .github/speechnotes-progress.sh vulkan_deps running "Packages installed; staging Vulkan + SPIR-V headers"
-          test -f /usr/include/vulkan/vulkan.hpp
-          test -f /usr/include/spirv/unified1/spirv.hpp
-          command -v glslc
-          ls -d /usr/share/cmake/SPIRV-Headers
-          rm -rf SpeechNotes/app/src/main/cpp/vulkan-headers
-          mkdir -p SpeechNotes/app/src/main/cpp/vulkan-headers/include
-          cp -a /usr/include/vulkan SpeechNotes/app/src/main/cpp/vulkan-headers/include/
-          cp -a /usr/include/spirv SpeechNotes/app/src/main/cpp/vulkan-headers/include/
-          test -f SpeechNotes/app/src/main/cpp/vulkan-headers/include/vulkan/vulkan.hpp
-          test -f SpeechNotes/app/src/main/cpp/vulkan-headers/include/spirv/unified1/spirv.hpp
-          bash .github/speechnotes-progress.sh vulkan_deps done "Vulkan and SPIR-V headers staged"
-
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -85,10 +65,10 @@ jobs:
       - name: Apply ARM Best runtime defaults
         run: python3 .github/patch_speechnotes_v150_runtime.py
 
-      - name: Apply Vulkan benchmark runtime
+      - name: Apply v1.7 CPU Performance Lab
         run: |
-          python3 .github/patch_speechnotes_v160_vulkan.py
-          bash .github/speechnotes-progress.sh patches done "Timing, benchmark, ARM Best and Vulkan runtime patches applied"
+          python3 .github/patch_speechnotes_v170_cpu_lab.py
+          bash .github/speechnotes-progress.sh patches done "CPU-only v1.7 performance lab patches applied"
 
       - name: Download bundled Base and Large-v3-Turbo models
         run: |
@@ -113,7 +93,7 @@ jobs:
       - name: Build signed release APK with live heartbeat
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh native_build running "Gradle/CMake/Vulkan build starting; heartbeat every 60 s"
+          bash .github/speechnotes-progress.sh native_build running "CPU-only Gradle/CMake build starting; heartbeat every 60 s"
           rm -f /tmp/speechnotes-gradle.log
           (
             cd SpeechNotes
@@ -124,8 +104,10 @@ jobs:
             while kill -0 "$BUILD_PID" 2>/dev/null; do
               sleep 60
               if kill -0 "$BUILD_PID" 2>/dev/null; then
+                NINJA_LINE="$(grep -E '\[[0-9]+/[0-9]+\]' /tmp/speechnotes-gradle.log 2>/dev/null | tail -n 1 | tr '\n' ' ' | cut -c1-180 || true)"
                 LAST_LINE="$(tail -n 1 /tmp/speechnotes-gradle.log 2>/dev/null | tr '\n' ' ' | cut -c1-180)"
-                bash .github/speechnotes-progress.sh native_build running "Gradle active: ${LAST_LINE:-waiting for output}" /tmp/speechnotes-gradle.log
+                DETAIL="${NINJA_LINE:-${LAST_LINE:-waiting for output}}"
+                bash .github/speechnotes-progress.sh native_build running "Native progress: $DETAIL" /tmp/speechnotes-gradle.log
               fi
             done
           ) &
@@ -140,12 +122,12 @@ jobs:
             bash .github/speechnotes-progress.sh native_build failed "Gradle/CMake build failed with rc=$BUILD_RC" /tmp/speechnotes-gradle.log
             exit "$BUILD_RC"
           fi
-          bash .github/speechnotes-progress.sh native_build done "Gradle/CMake/Vulkan build completed" /tmp/speechnotes-gradle.log
+          bash .github/speechnotes-progress.sh native_build done "CPU-only Gradle/CMake build completed" /tmp/speechnotes-gradle.log
 
-      - name: Inspect APK CPU and Vulkan backends
+      - name: Inspect APK CPU backends
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature and packaged CPU/Vulkan backends"
+          bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature and packaged ARM CPU backends"
           {
             cd SpeechNotes
             ls -lh app/build/outputs/apk/release/app-release.apk
@@ -153,18 +135,22 @@ jobs:
             sha256sum app/build/outputs/apk/release/app-release.apk
             unzip -l app/build/outputs/apk/release/app-release.apk | tee /tmp/apk-files.txt | grep 'lib/arm64-v8a/libggml'
             grep -q 'libggml-cpu-android_armv8.0_1.so' /tmp/apk-files.txt
+            grep -q 'libggml-cpu-android_armv8.6_1.so' /tmp/apk-files.txt
             grep -q 'libggml-cpu-android_armv9.0_1.so' /tmp/apk-files.txt
-            grep -q 'libggml-vulkan.so' /tmp/apk-files.txt
+            if grep -q 'libggml-vulkan.so' /tmp/apk-files.txt; then
+              echo 'Vulkan backend must not be present in v1.7' >&2
+              exit 1
+            fi
             $ANDROID_HOME/build-tools/35.0.0/aapt dump xmltree app/build/outputs/apk/release/app-release.apk AndroidManifest.xml | grep -A2 extractNativeLibs
-            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.6.0.apk
+            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.7.0.apk
           } 2>&1 | tee /tmp/speechnotes-inspect.log
-          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; ARMv8, ARMv9 and Vulkan libraries verified" /tmp/speechnotes-inspect.log
+          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; ARMv8.0, ARMv8.6 and ARMv9.0 verified; Vulkan absent" /tmp/speechnotes-inspect.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.6.0-arm64
-          path: SpeechNotes-1.6.0.apk
+          name: SpeechNotes-v1.7.0-arm64
+          path: SpeechNotes-1.7.0.apk
           compression-level: 0
           retention-days: 14
 
@@ -172,15 +158,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.6.0"
-          gh release delete speechnotes-v1.6.0 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.6.0 \
-            SpeechNotes-1.6.0.apk#SpeechNotes-1.6.0.apk \
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.7.0"
+          gh release delete speechnotes-v1.7.0 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.7.0 \
+            SpeechNotes-1.7.0.apk#SpeechNotes-1.7.0.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SPEECHNOTES_SOURCE_SHA" \
-            --title "Speech Notes v1.6.0" \
-            --notes "Vulkan performance-lab release. Normal Large-v3-Turbo dictation now uses ARM Best with 8 threads by default. Benchmark adds ARM Best CPU vs Vulkan GPU using the identical first 25.0 seconds, German language, no-context and the same Q5_0 model. Vulkan mode retains ARM Best as CPU fallback and fails cleanly if the Vulkan backend cannot initialize."
-          bash .github/speechnotes-progress.sh release done "speechnotes-v1.6.0 published with APK asset"
+            --title "Speech Notes v1.7.0" \
+            --notes "CPU Performance Lab release. Vulkan is completely removed. Normal dictation remains ARM Best with 8 threads. The lab benchmarks the identical first 25.0 seconds on Large-v3-Turbo Q5_0 across ARMv9 vs ARMv8.6, 6/7/8 threads, Flash Attention, audio_ctx 1344/1280, and a fast-core affinity experiment. Streaming is intentionally unchanged."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v1.7.0 published with APK asset"
 
       - name: Record build status
         if: always()
@@ -198,7 +184,7 @@ jobs:
               echo
               if [ -f /tmp/speechnotes-gradle.log ]; then
                 echo "===== GRADLE TAIL ====="
-                tail -n 220 /tmp/speechnotes-gradle.log
+                tail -n 260 /tmp/speechnotes-gradle.log
               else
                 echo "No Gradle log was produced; failure occurred before Gradle build."
               fi
