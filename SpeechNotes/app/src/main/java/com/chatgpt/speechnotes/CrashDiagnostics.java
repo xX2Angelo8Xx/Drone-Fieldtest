@@ -43,7 +43,7 @@ public final class CrashDiagnostics {
             SharedPreferences p = context.getSharedPreferences(PREF, Context.MODE_PRIVATE);
             String stage = p.getString(KEY_STAGE, "");
             long time = p.getLong(KEY_TIME, 0L);
-            if (stage != null && !stage.isEmpty()) {
+            if (stage != null && !stage.isEmpty() && !"ui:onCreate".equals(stage)) {
                 out.append("last_stage=").append(stage);
                 if (time > 0) {
                     out.append("\nlast_stage_time=")
@@ -56,9 +56,9 @@ public final class CrashDiagnostics {
         if (Build.VERSION.SDK_INT >= 30) {
             try {
                 ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-                List<ApplicationExitInfo> exits = am.getHistoricalProcessExitReasons(context.getPackageName(), 0, 3);
-                if (exits != null && !exits.isEmpty()) {
-                    ApplicationExitInfo e = exits.get(0);
+                List<ApplicationExitInfo> exits = am.getHistoricalProcessExitReasons(context.getPackageName(), 0, 5);
+                ApplicationExitInfo e = firstRelevantExit(exits);
+                if (e != null) {
                     if (out.length() > 0) out.append('\n');
                     out.append("last_exit_reason=").append(reasonName(e.getReason()))
                             .append('(').append(e.getReason()).append(')')
@@ -75,6 +75,20 @@ public final class CrashDiagnostics {
             } catch (Throwable ignored) { }
         }
         return out.toString();
+    }
+
+    private static ApplicationExitInfo firstRelevantExit(List<ApplicationExitInfo> exits) {
+        if (exits == null) return null;
+        for (ApplicationExitInfo e : exits) {
+            if (e == null) continue;
+            CharSequence d = e.getDescription();
+            String description = d == null ? "" : d.toString();
+            // PackageManager deliberately kills the old process while installing an update.
+            // That is expected lifecycle noise, not an application crash.
+            if (description.contains("installPackageLI") || description.contains("installPackage")) continue;
+            return e;
+        }
+        return null;
     }
 
     private static String reasonName(int reason) {
