@@ -1,44 +1,7 @@
 source_commit=e8241ad5c0677ceba8ab37cf36489f6b37f35e47
 run_id=32184745580
 run_attempt=1
-phase=native_build
-state=done
-updated_utc=2026-08-18T20:59:49Z
-detail=CPU/KleidiAI Gradle+CMake build completed
-
-===== LIVE LOG TAIL =====
-> Task :app:stripReleaseDebugSymbols
-> Task :app:processReleaseResources
-> Task :app:mergeReleaseAssets
-
-> Task :app:compileReleaseJavaWithJavac
-Note: Some input files use or override a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-
-> Task :app:generateReleaseLintVitalReportModel
-> Task :app:extractReleaseNativeSymbolTables
-> Task :app:dexBuilderRelease
-> Task :app:mergeReleaseGlobalSynthetics
-> Task :app:mergeDexRelease
-> Task :app:compileReleaseArtProfile
-> Task :app:extractReleaseVersionControlInfo
-> Task :app:processReleaseJavaRes NO-SOURCE
-> Task :app:mergeReleaseJavaResource
-> Task :app:mergeReleaseNativeDebugMetadata
-> Task :app:lintVitalAnalyzeRelease
-> Task :app:collectReleaseDependencies
-> Task :app:sdkReleaseDependencyData
-> Task :app:validateSigningRelease
-> Task :app:writeReleaseAppMetadata
-> Task :app:lintVitalReportRelease
-> Task :app:writeReleaseSigningConfigVersions
-> Task :app:lintVitalRelease
-> Task :app:optimizeReleaseResources
-> Task :app:compressReleaseAssets
-> Task :app:packageRelease
-> Task :app:createReleaseApkListingFileRedirect
-> Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_9-1787086618344.json
-
-BUILD SUCCESSFUL in 2m 56s
-49 actionable tasks: 49 executed
+phase=apk_inspect
+state=running
+updated_utc=2026-08-18T20:59:55Z
+detail=Verifying signature, stock ARMv9, KleidiAI backend and Q4_0 asset
