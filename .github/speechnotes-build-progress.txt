@@ -3,5 +3,5 @@ run_id=32089411410
 run_attempt=1
 phase=vulkan_deps
 state=running
-updated_utc=2026-08-18T01:47:32Z
-detail=apt update started (hard timeout 4 min)
+updated_utc=2026-08-18T01:47:43Z
+detail=apt install glslc/libvulkan-dev/spirv-headers (hard timeout 5 min)
