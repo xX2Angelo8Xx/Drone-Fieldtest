@@ -56,14 +56,15 @@ jobs:
 
       - name: Apply Speech Notes patches
         run: |
-          bash .github/speechnotes-progress.sh patches running "Applying timings, navigation, ARM runtime and v1.8.1 validation lab patches"
+          bash .github/speechnotes-progress.sh patches running "Applying timings, navigation, ARM runtime and v1.8.2 diagnostics patches"
           python3 .github/patch_speechnotes_whisper_timings.py
           python3 .github/patch_speechnotes_benchmark_tab.py
           python3 .github/patch_speechnotes_v150_runtime.py
           python3 .github/patch_speechnotes_v170_cpu_lab.py
           python3 .github/patch_speechnotes_v180_kleidiai_backend.py
           python3 .github/patch_speechnotes_v180_encoder_lab.py
-          bash .github/speechnotes-progress.sh patches done "v1.8.1 Q4 thread/affinity/backend validation lab patches applied"
+          python3 .github/patch_speechnotes_v182_diagnostics.py
+          bash .github/speechnotes-progress.sh patches done "v1.8.2 KAI transition diagnostics + copyable telemetry export applied"
 
       - name: Build pinned host whisper quantizer
         run: |
@@ -162,7 +163,7 @@ jobs:
           fi
           bash .github/speechnotes-progress.sh native_build done "CPU/KleidiAI Gradle+CMake build completed" /tmp/speechnotes-gradle.log
 
-      - name: Inspect APK encoder lab contents
+      - name: Inspect APK diagnostics contents
         run: |
           set -o pipefail
           bash .github/speechnotes-progress.sh apk_inspect running "Verifying signature, stock ARMv9, KleidiAI backend and Q4_0 asset"
@@ -177,19 +178,19 @@ jobs:
             grep -q 'assets/models/ggml-large-v3-turbo-q5_0.bin' /tmp/apk-files.txt
             grep -q 'assets/models/ggml-large-v3-turbo-q4_0.bin' /tmp/apk-files.txt
             if grep -q 'libggml-vulkan.so' /tmp/apk-files.txt; then
-              echo 'Vulkan backend must not be present in v1.8.1' >&2
+              echo 'Vulkan backend must not be present in v1.8.2' >&2
               exit 1
             fi
             $ANDROID_HOME/build-tools/35.0.0/aapt dump xmltree app/build/outputs/apk/release/app-release.apk AndroidManifest.xml | grep -A2 extractNativeLibs
-            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.1.apk
+            cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.8.2.apk
           } 2>&1 | tee /tmp/speechnotes-inspect.log
-          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; Q5/Q4 + stock ARMv9 + isolated KleidiAI verified; Vulkan absent" /tmp/speechnotes-inspect.log
+          bash .github/speechnotes-progress.sh apk_inspect done "APK signed; Q4 stock/KleidiAI diagnostics ready; Vulkan absent" /tmp/speechnotes-inspect.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.8.1-arm64
-          path: SpeechNotes-1.8.1.apk
+          name: SpeechNotes-v1.8.2-arm64
+          path: SpeechNotes-1.8.2.apk
           compression-level: 0
           retention-days: 14
 
@@ -197,15 +198,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.1"
-          gh release delete speechnotes-v1.8.1 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.8.1 \
-            SpeechNotes-1.8.1.apk#SpeechNotes-1.8.1.apk \
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.8.2"
+          gh release delete speechnotes-v1.8.2 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.8.2 \
+            SpeechNotes-1.8.2.apk#SpeechNotes-1.8.2.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SPEECHNOTES_SOURCE_SHA" \
-            --title "Speech Notes v1.8.1" \
-            --notes "Encoder validation iteration. Q4_0 remains CI-generated from the official Large-v3-Turbo source using whisper.cpp v1.9.1. The benchmark lab isolates stock ARMv9 vs KleidiAI, 4/6/8-thread behavior and fast-core affinity at fixed audio_ctx=1280, with three repetitions per configuration on the identical first 25.0 seconds. Transcripts remain visible for quality checks. Vulkan and Flash Attention remain disabled. Streaming is intentionally unchanged."
-          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.1 published with APK asset"
+            --title "Speech Notes v1.8.2" \
+            --notes "Runtime diagnostics iteration. The benchmark executes five clean stock ARMv9 Q4_0/4-thread baselines, one isolated KleidiAI transition, then three stock post-KAI runs at fixed ctx1280 on the identical first 25.0 seconds. Each run captures process/system memory, native heap, CPU-frequency snapshots plus 1 Hz min/max sampling, thermal-zone snapshots, load timing and Whisper timing data. A Benchmark-Daten kopieren button exports all diagnostics and transcripts as plain text. Vulkan and Flash Attention remain disabled; streaming remains unchanged."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v1.8.2 published with APK asset"
 
       - name: Record build status
         if: always()
