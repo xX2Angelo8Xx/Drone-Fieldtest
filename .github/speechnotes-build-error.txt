@@ -1,0 +1,6 @@
+Speech Notes CI failure diagnostics
+source_commit=f637cd61b5650d93d65ad7acf58e76290603adfe
+
+
+No Gradle log was produced; failure occurred before Gradle build.
+
