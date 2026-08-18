@@ -3,23 +3,10 @@ run_id=32133848461
 run_attempt=1
 phase=native_build
 state=running
-updated_utc=2026-08-18T11:56:37Z
-detail=Native progress: > Task :app:processReleaseManifestForPackage 
+updated_utc=2026-08-18T11:57:38Z
+detail=Native progress: > Task :app:extractReleaseNativeSymbolTables 
 
 ===== LIVE LOG TAIL =====
-
-Welcome to Gradle 8.9!
-
-Here are the highlights of this release:
- - Enhanced Error and Warning Messages
- - IDE Integration Improvements
- - Daemon JVM Information
-
-For more details see https://docs.gradle.org/8.9/release-notes.html
-
-To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
-Daemon will be stopped at the end of the build 
-> Task :app:preBuild UP-TO-DATE
 > Task :app:preReleaseBuild UP-TO-DATE
 > Task :app:javaPreCompileRelease
 > Task :app:checkReleaseAarMetadata
@@ -41,3 +28,17 @@ The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml 
 > Task :app:extractProguardFiles
 > Task :app:configureCMakeRelease[arm64-v8a]
 > Task :app:processReleaseManifestForPackage
+> Task :app:buildCMakeRelease[arm64-v8a]
+> Task :app:mergeReleaseJniLibFolders
+> Task :app:mergeReleaseNativeLibs
+> Task :app:checkReleaseDuplicateClasses
+> Task :app:desugarReleaseFileDependencies
+> Task :app:mergeReleaseStartupProfile
+> Task :app:mergeReleaseArtProfile
+> Task :app:mergeExtDexRelease
+> Task :app:stripReleaseDebugSymbols
+> Task :app:mergeReleaseShaders
+> Task :app:compileReleaseShaders NO-SOURCE
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :app:processReleaseResources
+> Task :app:extractReleaseNativeSymbolTables
