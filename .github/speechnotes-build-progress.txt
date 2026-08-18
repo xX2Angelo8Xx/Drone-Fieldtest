@@ -1,7 +1,7 @@
-source_commit=c7728d7314ac07ac91f5fa92c369b84ad80a9e70
-run_id=32092154158
+source_commit=23206c42ec5597be35796787fd889b8341a42acc
+run_id=32092208553
 run_attempt=1
-phase=android_sdk
+phase=initialize
 state=running
-updated_utc=2026-08-18T02:32:08Z
-detail=Installing Android 35, NDK 27 and CMake 3.22.1
+updated_utc=2026-08-18T02:32:54Z
+detail=Runner started; source checkout complete
