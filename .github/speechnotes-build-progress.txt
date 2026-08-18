@@ -1,7 +1,7 @@
 source_commit=cd99a2dad673b1d7dde201b9670d55b8f0f5904c
 run_id=32182050242
 run_attempt=1
-phase=signing
-state=done
-updated_utc=2026-08-18T20:27:47Z
-detail=Signing key verified
+phase=native_build
+state=running
+updated_utc=2026-08-18T20:27:49Z
+detail=CPU/KleidiAI Gradle+CMake build starting; heartbeat every 60 s
