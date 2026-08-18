@@ -1,44 +1,7 @@
-source_commit=cd99a2dad673b1d7dde201b9670d55b8f0f5904c
-run_id=32182050242
+source_commit=e8241ad5c0677ceba8ab37cf36489f6b37f35e47
+run_id=32184745580
 run_attempt=1
-phase=native_build
-state=failed
-updated_utc=2026-08-18T20:30:21Z
-detail=Gradle/CMake build failed with rc=1
-
-===== LIVE LOG TAIL =====
-  location: variable r of type Result
-/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/BenchmarkActivity.java:369: error: cannot find symbol
-                benchmarkExport.append("native_ms=").append(r.profile.nativeTotalMs)
-                                                             ^
-  symbol:   variable profile
-  location: variable r of type Result
-/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/BenchmarkActivity.java:385: error: cannot find symbol
-                String transcript = r.profile.text == null ? "" : r.profile.text.trim().replace('\n', ' ');
-                                     ^
-  symbol:   variable profile
-  location: variable r of type Result
-/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/BenchmarkActivity.java:385: error: cannot find symbol
-                String transcript = r.profile.text == null ? "" : r.profile.text.trim().replace('\n', ' ');
-                                                                   ^
-  symbol:   variable profile
-  location: variable r of type Result
-Note: Some input files use or override a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-8 errors
-
-> Task :app:compileReleaseJavaWithJavac FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_9-1787084877792.json
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Execution failed for task ':app:compileReleaseJavaWithJavac'.
-> Compilation failed; see the compiler error output for details.
-
-* Try:
-> Run with --info option to get more log output.
-> Run with --scan to get full insights.
-
-BUILD FAILED in 2m 29s
-28 actionable tasks: 28 executed
+phase=initialize
+state=running
+updated_utc=2026-08-18T20:53:14Z
+detail=Runner started; source checkout complete
