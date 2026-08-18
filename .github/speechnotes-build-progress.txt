@@ -1,20 +1,7 @@
 source_commit=e8241ad5c0677ceba8ab37cf36489f6b37f35e47
 run_id=32184745580
 run_attempt=1
-phase=quantizer_build
-state=done
-updated_utc=2026-08-18T20:55:18Z
-detail=Pinned whisper-quantize tool ready
-
-===== LIVE LOG TAIL =====
-usage: /tmp/whisper-host/bin/whisper-quantize model-f32.bin model-quant.bin type
-  type = "q2_k" or 10
-  type = "q3_k" or 11
-  type = "q4_0" or 2
-  type = "q4_1" or 3
-  type = "q4_k" or 12
-  type = "q5_0" or 8
-  type = "q5_1" or 9
-  type = "q5_k" or 13
-  type = "q6_k" or 14
-  type = "q8_0" or 7
+phase=models
+state=running
+updated_utc=2026-08-18T20:55:21Z
+detail=Downloading Base Q5_1, Turbo Q5_0 and source Turbo model
