@@ -76,13 +76,13 @@ jobs:
           ls -lh app/build/outputs/apk/release/app-release.apk
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
           sha256sum app/build/outputs/apk/release/app-release.apk
-          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.4.0.apk
+          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.4.1.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.4.0-arm64
-          path: SpeechNotes-1.4.0.apk
+          name: SpeechNotes-v1.4.1-arm64
+          path: SpeechNotes-1.4.1.apk
           compression-level: 0
           retention-days: 14
 
@@ -90,13 +90,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete speechnotes-v1.4.0 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.4.0 \
-            SpeechNotes-1.4.0.apk#SpeechNotes-1.4.0.apk \
+          gh release delete speechnotes-v1.4.1 --yes --cleanup-tag || true
+          gh release create speechnotes-v1.4.1 \
+            SpeechNotes-1.4.1.apk#SpeechNotes-1.4.1.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Speech Notes v1.4.0" \
-            --notes "Reusable benchmark release. Adds a fixed Benchmark tab that lists app-private WAV recordings and runs the exact same 16 kHz mono PCM16 input through a deterministic 2/4/6/8-thread suite. Benchmark runs use German language, Aviation prompt off, no-context isolation, persistent model loading, full native profiling and a benchmark wake lock. Results show Wall time, RTF, Native total and Encode timing. Main dictation path remains the proven single-encode German configuration."
+            --title "Speech Notes v1.4.1" \
+            --notes "Benchmark stability fix. Keeps the Benchmark activity portrait/rotation-safe so device tilt cannot destroy an active suite, and automatically caps benchmark audio to the first 25.0 seconds of the selected WAV so each 2/4/6/8-thread run stays safely below Whisper's 30-second chunk boundary and measures one encoder pass. The original WAV is never modified. Main dictation remains fixed to German language."
 
       - name: Record build status
         if: always()
