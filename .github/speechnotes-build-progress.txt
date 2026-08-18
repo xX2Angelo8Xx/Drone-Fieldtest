@@ -1,7 +1,7 @@
 source_commit=23206c42ec5597be35796787fd889b8341a42acc
 run_id=32092208553
 run_attempt=1
-phase=whisper_source
-state=done
-updated_utc=2026-08-18T02:33:42Z
-detail=whisper.cpp v1.9.1 fetched
+phase=patches
+state=running
+updated_utc=2026-08-18T02:33:43Z
+detail=Applying timings, navigation, ARM runtime and v1.8 encoder lab patches
