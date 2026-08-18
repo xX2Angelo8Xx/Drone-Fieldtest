@@ -3,11 +3,10 @@ run_id=32176585386
 run_attempt=1
 phase=native_build
 state=running
-updated_utc=2026-08-18T19:31:08Z
-detail=Native progress: > Task :app:lintVitalAnalyzeRelease 
+updated_utc=2026-08-18T19:32:09Z
+detail=Native progress: > Task :app:buildCMakeRelease[arm64-v8a] 
 
 ===== LIVE LOG TAIL =====
-
 For more details see https://docs.gradle.org/8.9/release-notes.html
 
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
@@ -42,3 +41,4 @@ Note: Recompile with -Xlint:deprecation for details.
 
 > Task :app:generateReleaseLintVitalReportModel
 > Task :app:lintVitalAnalyzeRelease
+> Task :app:buildCMakeRelease[arm64-v8a]
