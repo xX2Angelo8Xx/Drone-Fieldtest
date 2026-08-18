@@ -2,43 +2,43 @@ source_commit=cd99a2dad673b1d7dde201b9670d55b8f0f5904c
 run_id=32182050242
 run_attempt=1
 phase=native_build
-state=running
-updated_utc=2026-08-18T20:29:52Z
-detail=Native progress: > Task :app:buildCMakeRelease[arm64-v8a] 
+state=failed
+updated_utc=2026-08-18T20:30:21Z
+detail=Gradle/CMake build failed with rc=1
 
 ===== LIVE LOG TAIL =====
+  location: variable r of type Result
+/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/BenchmarkActivity.java:369: error: cannot find symbol
+                benchmarkExport.append("native_ms=").append(r.profile.nativeTotalMs)
+                                                             ^
+  symbol:   variable profile
+  location: variable r of type Result
+/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/BenchmarkActivity.java:385: error: cannot find symbol
+                String transcript = r.profile.text == null ? "" : r.profile.text.trim().replace('\n', ' ');
+                                     ^
+  symbol:   variable profile
+  location: variable r of type Result
+/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/BenchmarkActivity.java:385: error: cannot find symbol
+                String transcript = r.profile.text == null ? "" : r.profile.text.trim().replace('\n', ' ');
+                                                                   ^
+  symbol:   variable profile
+  location: variable r of type Result
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+8 errors
 
-Welcome to Gradle 8.9!
+> Task :app:compileReleaseJavaWithJavac FAILED
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_9-1787084877792.json
 
-Here are the highlights of this release:
- - Enhanced Error and Warning Messages
- - IDE Integration Improvements
- - Daemon JVM Information
+FAILURE: Build failed with an exception.
 
-For more details see https://docs.gradle.org/8.9/release-notes.html
+* What went wrong:
+Execution failed for task ':app:compileReleaseJavaWithJavac'.
+> Compilation failed; see the compiler error output for details.
 
-To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
-Daemon will be stopped at the end of the build 
-> Task :app:preBuild UP-TO-DATE
-> Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:checkReleaseAarMetadata
-> Task :app:javaPreCompileRelease
-> Task :app:generateReleaseResValues
-> Task :app:mapReleaseSourceSetPaths
-> Task :app:generateReleaseResources
-> Task :app:packageReleaseResources
-> Task :app:mergeReleaseResources
-> Task :app:createReleaseCompatibleScreenManifests
-> Task :app:extractDeepLinksRelease
-> Task :app:parseReleaseLocalResources
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
 
-> Task :app:processReleaseMainManifest
-/home/runner/work/Drone-Fieldtest/Drone-Fieldtest/SpeechNotes/app/src/main/AndroidManifest.xml:11:9-41 Warning:
-	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
-The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
-
-> Task :app:processReleaseManifest
-> Task :app:extractProguardFiles
-> Task :app:configureCMakeRelease[arm64-v8a]
-> Task :app:processReleaseManifestForPackage
-> Task :app:buildCMakeRelease[arm64-v8a]
+BUILD FAILED in 2m 29s
+28 actionable tasks: 28 executed
