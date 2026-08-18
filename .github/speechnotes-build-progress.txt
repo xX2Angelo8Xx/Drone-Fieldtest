@@ -2,6 +2,9 @@ source_commit=f7eea78d78ebc23c6f4d037ab393c5363fdf691f
 run_id=32133848461
 run_attempt=1
 phase=models
-state=running
-updated_utc=2026-08-18T11:54:25Z
-detail=Downloading Base Q5_1, Turbo Q5_0 and source Turbo model
+state=done
+updated_utc=2026-08-18T11:55:24Z
+detail=Q5 models verified and source Turbo model downloaded
+
+===== LIVE LOG TAIL =====
+1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69  /tmp/ggml-large-v3-turbo.bin
