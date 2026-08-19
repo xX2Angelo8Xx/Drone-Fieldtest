@@ -1,7 +1,7 @@
-source_commit=08eecb2de811bbd3f51ef75ffcbf111d116eb3e6
-run_id=32235506696
+source_commit=789fee57568961dd67451e74e272b53114b59f86
+run_id=32236149772
 run_attempt=1
-phase=lint_review
+phase=initialize
 state=running
-updated_utc=2026-08-19T09:06:48Z
-detail=Running Android lint review before streaming work
+updated_utc=2026-08-19T09:09:25Z
+detail=Runner started; source checkout complete
