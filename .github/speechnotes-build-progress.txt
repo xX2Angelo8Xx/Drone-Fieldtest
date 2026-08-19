@@ -1,7 +1,7 @@
-source_commit=81c45d6d684d62e5f0c45a727f6f71d56e5ef208
-run_id=32194442895
+source_commit=eb6d7c28f29aadde37709278a813c05e4e3847f9
+run_id=32234093045
 run_attempt=1
-phase=patches
+phase=initialize
 state=running
-updated_utc=2026-08-18T22:50:08Z
-detail=Applying v1.8.5 runtime-session unification and recording guard fix
+updated_utc=2026-08-19T08:44:43Z
+detail=Runner started; source checkout complete
