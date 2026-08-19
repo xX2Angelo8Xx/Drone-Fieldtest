@@ -1,7 +1,7 @@
 source_commit=53ff10f20d69fd98fa6bef558711ad69e4256cfc
 run_id=32243703621
 run_attempt=1
-phase=whisper_source
-state=done
-updated_utc=2026-08-19T10:39:59Z
-detail=whisper.cpp v1.9.1 fetched
+phase=patches
+state=running
+updated_utc=2026-08-19T10:40:01Z
+detail=Applying v1.8.5 runtime-session unification and recording guard fix
