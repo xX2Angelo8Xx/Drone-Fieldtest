@@ -65,11 +65,14 @@ new = '''                long prepareStart = SystemClock.elapsedRealtime();
 if old not in s:
     raise SystemExit('v1.8.5 MainActivity model-load block not found')
 s = s.replace(old, new, 1)
-s = s.replace('''                    modelLoadStatus.setText("Bereit · Datei " + formatMsPrecise(extractMs) +
-                            " · Init " + formatMsPrecise(WhisperBridge.currentModelLoadMs()));''',
-'''                    modelLoadStatus.setText("Bereit · Prepare " + formatMsPrecise(prepareMs) +
-                            " · Init " + formatMsPrecise(WhisperBridge.currentModelLoadMs()) +
-                            " · " + WhisperBridge.currentBackendName());''', 1)
+
+# Keep this replacement deliberately token-level: preceding patches may alter
+# whitespace/labels around the status text, but the stale variable must never
+# survive after extractMs was replaced by prepareMs.
+if 'formatMsPrecise(extractMs)' not in s:
+    raise SystemExit('v1.8.5 MainActivity stale extractMs status token not found')
+s = s.replace('formatMsPrecise(extractMs)', 'formatMsPrecise(prepareMs)', 1)
+s = s.replace('"Bereit · Datei "', '"Bereit · Prepare "', 1)
 p.write_text(s)
 
 service = 'SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/RecordingService.java'
