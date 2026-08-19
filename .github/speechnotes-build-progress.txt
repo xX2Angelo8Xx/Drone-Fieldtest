@@ -1,7 +1,7 @@
-source_commit=eb6d7c28f29aadde37709278a813c05e4e3847f9
-run_id=32234093045
+source_commit=08eecb2de811bbd3f51ef75ffcbf111d116eb3e6
+run_id=32235506696
 run_attempt=1
-phase=native_build
+phase=initialize
 state=running
-updated_utc=2026-08-19T08:48:14Z
-detail=v1.8.5 Gradle+CMake build starting
+updated_utc=2026-08-19T09:01:42Z
+detail=Runner started; source checkout complete
