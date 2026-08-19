@@ -1,44 +1,7 @@
 source_commit=700b4c71c1c0b5b33e16e6e5d7997562b387ba64
 run_id=32252138062
 run_attempt=1
-phase=native_build
-state=done
-updated_utc=2026-08-19T12:27:39Z
-detail=v1.8.5 Gradle+CMake build completed
-
-===== LIVE LOG TAIL =====
-> Task :app:lintVitalRelease
-> Task :app:checkReleaseDuplicateClasses
-> Task :app:mergeReleaseNativeLibs
-> Task :app:dexBuilderRelease
-> Task :app:desugarReleaseFileDependencies
-> Task :app:mergeReleaseStartupProfile
-> Task :app:stripReleaseDebugSymbols
-> Task :app:mergeReleaseArtProfile
-> Task :app:mergeReleaseGlobalSynthetics
-> Task :app:extractReleaseNativeSymbolTables
-> Task :app:mergeReleaseShaders
-> Task :app:compileReleaseShaders NO-SOURCE
-> Task :app:generateReleaseAssets UP-TO-DATE
-> Task :app:mergeReleaseNativeDebugMetadata
-> Task :app:mergeExtDexRelease
-> Task :app:mergeReleaseAssets
-> Task :app:extractReleaseVersionControlInfo
-> Task :app:processReleaseJavaRes NO-SOURCE
-> Task :app:mergeDexRelease
-> Task :app:optimizeReleaseResources
-> Task :app:collectReleaseDependencies
-> Task :app:sdkReleaseDependencyData
-> Task :app:validateSigningRelease
-> Task :app:writeReleaseAppMetadata
-> Task :app:writeReleaseSigningConfigVersions
-> Task :app:compileReleaseArtProfile
-> Task :app:mergeReleaseJavaResource
-> Task :app:compressReleaseAssets
-> Task :app:packageRelease
-> Task :app:createReleaseApkListingFileRedirect
-> Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_9-1787142272010.json
-
-BUILD SUCCESSFUL in 3m 14s
-49 actionable tasks: 49 executed
+phase=lint_review
+state=running
+updated_utc=2026-08-19T12:27:40Z
+detail=Running Android lint review before streaming work
