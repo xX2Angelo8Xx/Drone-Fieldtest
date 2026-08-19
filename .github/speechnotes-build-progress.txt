@@ -1,7 +1,7 @@
 source_commit=789fee57568961dd67451e74e272b53114b59f86
 run_id=32236149772
 run_attempt=1
-phase=android_sdk
-state=done
-updated_utc=2026-08-19T09:10:08Z
-detail=Android SDK components ready
+phase=whisper_source
+state=running
+updated_utc=2026-08-19T09:10:15Z
+detail=Cloning whisper.cpp v1.9.1
