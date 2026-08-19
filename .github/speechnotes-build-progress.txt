@@ -1,44 +1,7 @@
 source_commit=272ad337724a9f993f6d502cbab2f000e8e65a2f
 run_id=32237256800
 run_attempt=1
-phase=quantize_q4
-state=done
-updated_utc=2026-08-19T09:25:27Z
-detail=Turbo Q4_0 generated and verified
-
-===== LIVE LOG TAIL =====
-                              decoder.blocks.3.attn.value.weight - [ 1280,  1280,     1], type =    f16 size =     6.25 MB ->     0.88 MB
-                                   decoder.blocks.3.attn_ln.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                 decoder.blocks.3.attn_ln.weight - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                          decoder.blocks.3.cross_attn.value.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                          decoder.blocks.3.cross_attn.key.weight - [ 1280,  1280,     1], type =    f16 size =     6.25 MB ->     0.88 MB
-                        decoder.blocks.3.cross_attn.value.weight - [ 1280,  1280,     1], type =    f16 size =     6.25 MB ->     0.88 MB
-                            decoder.blocks.3.cross_attn.out.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                          decoder.blocks.3.cross_attn.out.weight - [ 1280,  1280,     1], type =    f16 size =     6.25 MB ->     0.88 MB
-                          decoder.blocks.3.cross_attn.query.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                        decoder.blocks.3.cross_attn.query.weight - [ 1280,  1280,     1], type =    f16 size =     6.25 MB ->     0.88 MB
-                             decoder.blocks.3.cross_attn_ln.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                           decoder.blocks.3.cross_attn_ln.weight - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                     decoder.blocks.3.mlp.0.bias - [ 5120,     1,     1], type =    f32 size =    0.020 MB
-                                   decoder.blocks.3.mlp.0.weight - [ 1280,  5120,     1], type =    f16 size =    25.00 MB ->     3.52 MB
-                                     decoder.blocks.3.mlp.2.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                   decoder.blocks.3.mlp.2.weight - [ 5120,  1280,     1], type =    f16 size =    25.00 MB ->     3.52 MB
-                                    decoder.blocks.3.mlp_ln.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                  decoder.blocks.3.mlp_ln.weight - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                            encoder.ln_post.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                          encoder.ln_post.weight - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                    encoder.positional_embedding - [ 1280,  1500,     1], type =    f32 size =    7.324 MB
-                                              encoder.conv1.bias - [    1,  1280,     1], type =    f32 size =    0.005 MB
-                                            encoder.conv1.weight - [    3,   128,  1280], type =    f16 size =    0.938 MB
-                                              encoder.conv2.bias - [    1,  1280,     1], type =    f32 size =    0.005 MB
-                                            encoder.conv2.weight - [    3,  1280,  1280], type =    f16 size =    9.375 MB
-                                                 decoder.ln.bias - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                               decoder.ln.weight - [ 1280,     1,     1], type =    f32 size =    0.005 MB
-                                    decoder.positional_embedding - [ 1280,   448,     1], type =    f32 size =    2.188 MB
-                                  decoder.token_embedding.weight - [ 1280, 51866,     1], type =    f16 size =   253.25 MB ->    35.61 MB
-ggml_common_quantize_0: model size  =  3085.62 MB
-ggml_common_quantize_0: quant size  =   451.42 MB | ftype = 2 (q4_0)
-
-main: quantize time =  3871.13 ms
-main:    total time =  3871.13 ms
-2ceb779ca61ce46ed6e9aa43c4a0f8a89a37f683df3c0ba3119238fcd5852155  SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q4_0.bin
+phase=signing
+state=running
+updated_utc=2026-08-19T09:25:28Z
+detail=Restoring persistent APK signing key
