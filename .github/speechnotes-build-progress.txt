@@ -1,7 +1,7 @@
 source_commit=08eecb2de811bbd3f51ef75ffcbf111d116eb3e6
 run_id=32235506696
 run_attempt=1
-phase=quantizer_build
-state=done
-updated_utc=2026-08-19T09:03:37Z
-detail=Pinned quantizer ready
+phase=models
+state=running
+updated_utc=2026-08-19T09:03:39Z
+detail=Downloading Q5 models and Turbo source
