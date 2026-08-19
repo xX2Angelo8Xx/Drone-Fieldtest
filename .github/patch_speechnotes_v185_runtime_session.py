@@ -73,6 +73,38 @@ if 'formatMsPrecise(extractMs)' not in s:
     raise SystemExit('v1.8.5 MainActivity stale extractMs status token not found')
 s = s.replace('formatMsPrecise(extractMs)', 'formatMsPrecise(prepareMs)', 1)
 s = s.replace('"Bereit · Datei "', '"Bereit · Prepare "', 1)
+
+# Android 14+ requires an explicit export policy for context-registered
+# receivers. This receiver only consumes RecordingService state from this app,
+# so keep it non-exported on every supported Android version via AndroidX Core.
+if 'import androidx.core.content.ContextCompat;' not in s:
+    import_anchor = 'import android.widget.Toast;\n\n'
+    if import_anchor not in s:
+        raise SystemExit('v1.8.5 MainActivity AndroidX import anchor not found')
+    s = s.replace(import_anchor,
+                  'import android.widget.Toast;\n\nimport androidx.core.content.ContextCompat;\n\n', 1)
+
+receiver_old = '''        IntentFilter filter = new IntentFilter(RecordingService.ACTION_STATE);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(stateReceiver, filter, RECEIVER_NOT_EXPORTED);
+        else registerReceiver(stateReceiver, filter);'''
+receiver_new = '''        IntentFilter filter = new IntentFilter(RecordingService.ACTION_STATE);
+        ContextCompat.registerReceiver(this, stateReceiver, filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED);'''
+if receiver_old not in s:
+    raise SystemExit('v1.8.5 MainActivity receiver registration block not found')
+s = s.replace(receiver_old, receiver_new, 1)
+p.write_text(s)
+
+# ContextCompat.registerReceiver is the Android-recommended compatibility path
+# for explicit receiver export semantics while retaining minSdk 28.
+gradle_file = 'SpeechNotes/app/build.gradle'
+p = Path(gradle_file)
+s = p.read_text()
+core_dependency = "implementation 'androidx.core:core:1.13.1'"
+if core_dependency not in s:
+    if 'dependencies {' in s:
+        raise SystemExit('v1.8.5 unexpected pre-existing dependencies block; review before modifying')
+    s = s.rstrip() + "\n\ndependencies {\n    " + core_dependency + "\n}\n"
 p.write_text(s)
 
 service = 'SpeechNotes/app/src/main/java/com/chatgpt/speechnotes/RecordingService.java'
@@ -108,4 +140,4 @@ if old2 not in s:
 s = s.replace(old2, new2, 1)
 p.write_text(s)
 
-print('Applied v1.8.5 unified native runtime session + self-healing recording guards')
+print('Applied v1.8.5 unified native runtime session + self-healing recording guards + safe receiver registration')
