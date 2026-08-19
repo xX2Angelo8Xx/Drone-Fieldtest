@@ -1,7 +1,7 @@
 source_commit=700b4c71c1c0b5b33e16e6e5d7997562b387ba64
 run_id=32252138062
 run_attempt=1
-phase=apk_inspect
-state=done
-updated_utc=2026-08-19T12:28:06Z
-detail=Signed v1.8.5 APK verified; Q4 + ARMv9 + KAI present; Vulkan absent
+phase=release
+state=running
+updated_utc=2026-08-19T12:28:14Z
+detail=Publishing speechnotes-v1.8.5
