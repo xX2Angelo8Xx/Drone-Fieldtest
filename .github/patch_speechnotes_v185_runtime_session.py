@@ -49,7 +49,6 @@ rep(main,
 '''        boolean loaded = WhisperBridge.isModelLoaded(selectedModelFile().getAbsolutePath(), SpeechRuntimeConfig.BACKEND);''',
 '''        boolean loaded = SpeechRuntimeSession.isReady(selectedModelFile(), selectedModelName());''')
 
-# Use the unified session for model preparation instead of duplicating native-state logic in the Activity.
 p = Path(main)
 s = p.read_text()
 old = '''                long extractStart = SystemClock.elapsedRealtime();
@@ -92,8 +91,9 @@ if old not in s:
     raise SystemExit('v1.8.5 RecordingService start guard block not found')
 s = s.replace(old, new, 1)
 
+# v1.8.3 converts the historical BEST guard to V90 before the v1.8.4 patch runs.
 old2 = '''                File modelFile = ModelManager.ensureModel(this, model);
-                if (!WhisperBridge.isModelLoaded(modelFile.getAbsolutePath(), SpeechRuntimeConfig.BACKEND)) {
+                if (!WhisperBridge.isModelLoaded(modelFile.getAbsolutePath(), WhisperBridge.BACKEND_V90)) {
                     throw new IllegalStateException("Geladener Modell-Context ist nicht mehr verfügbar.");
                 }'''
 new2 = '''                File modelFile = ModelManager.ensureModel(this, model);
