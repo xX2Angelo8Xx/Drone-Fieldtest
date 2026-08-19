@@ -1,7 +1,7 @@
 source_commit=789fee57568961dd67451e74e272b53114b59f86
 run_id=32236149772
 run_attempt=1
-phase=models
-state=done
-updated_utc=2026-08-19T09:11:42Z
-detail=Q5 models verified and Turbo source ready
+phase=quantize_q4
+state=running
+updated_utc=2026-08-19T09:11:43Z
+detail=Quantizing official Turbo source to Q4_0
