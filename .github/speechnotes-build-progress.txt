@@ -1,44 +1,7 @@
 source_commit=789fee57568961dd67451e74e272b53114b59f86
 run_id=32236149772
 run_attempt=1
-phase=native_build
-state=done
-updated_utc=2026-08-19T09:14:19Z
-detail=v1.8.5 Gradle+CMake build completed
-
-===== LIVE LOG TAIL =====
-> Task :app:stripReleaseDebugSymbols
-> Task :app:processReleaseResources
-> Task :app:mergeReleaseAssets
-
-> Task :app:compileReleaseJavaWithJavac
-Note: Some input files use or override a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-
-> Task :app:generateReleaseLintVitalReportModel
-> Task :app:extractReleaseNativeSymbolTables
-> Task :app:dexBuilderRelease
-> Task :app:mergeReleaseGlobalSynthetics
-> Task :app:mergeDexRelease
-> Task :app:compileReleaseArtProfile
-> Task :app:extractReleaseVersionControlInfo
-> Task :app:processReleaseJavaRes NO-SOURCE
-> Task :app:mergeReleaseNativeDebugMetadata
-> Task :app:mergeReleaseJavaResource
-> Task :app:collectReleaseDependencies
-> Task :app:sdkReleaseDependencyData
-> Task :app:validateSigningRelease
-> Task :app:writeReleaseAppMetadata
-> Task :app:lintVitalAnalyzeRelease
-> Task :app:writeReleaseSigningConfigVersions
-> Task :app:optimizeReleaseResources
-> Task :app:lintVitalReportRelease
-> Task :app:lintVitalRelease
-> Task :app:compressReleaseAssets
-> Task :app:packageRelease
-> Task :app:createReleaseApkListingFileRedirect
-> Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_9-1787130718599.json
-
-BUILD SUCCESSFUL in 2m 24s
-49 actionable tasks: 49 executed
+phase=lint_review
+state=running
+updated_utc=2026-08-19T09:14:21Z
+detail=Running Android lint review before streaming work
