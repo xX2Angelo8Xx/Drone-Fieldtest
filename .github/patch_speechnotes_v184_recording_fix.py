@@ -42,6 +42,13 @@ new_start = r'''    private void startRecording() {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         int bufferSize = Math.max(min, SAMPLE_RATE * 2);
         try {
+            // Runtime permission is revocable at any time. Check it in the service itself
+            // before touching AudioRecord instead of relying only on the Activity flow.
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                throw new SecurityException("Mikrofonberechtigung RECORD_AUDIO fehlt");
+            }
+
             // Android 16 robustness: satisfy the foreground-service contract immediately,
             // before model validation / AudioRecord setup can do any non-trivial work.
             Intent stopIntent = new Intent(this, RecordingService.class).setAction(ACTION_STOP);
