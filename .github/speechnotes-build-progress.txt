@@ -1,7 +1,7 @@
 source_commit=eb6d7c28f29aadde37709278a813c05e4e3847f9
 run_id=32234093045
 run_attempt=1
-phase=patches
-state=done
-updated_utc=2026-08-19T08:45:55Z
-detail=Unified native runtime state + self-healing recording guards applied
+phase=quantizer_build
+state=running
+updated_utc=2026-08-19T08:45:56Z
+detail=Building whisper.cpp v1.9.1 host quantizer
