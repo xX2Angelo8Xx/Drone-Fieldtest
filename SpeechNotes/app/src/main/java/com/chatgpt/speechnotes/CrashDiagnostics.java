@@ -1,5 +1,6 @@
 package com.chatgpt.speechnotes;
 
+import android.annotation.TargetApi;
 import android.app.ActivityManager;
 import android.app.ApplicationExitInfo;
 import android.content.Context;
@@ -53,30 +54,36 @@ public final class CrashDiagnostics {
             }
         } catch (Throwable ignored) { }
 
-        if (Build.VERSION.SDK_INT >= 30) {
-            try {
-                ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-                List<ApplicationExitInfo> exits = am.getHistoricalProcessExitReasons(context.getPackageName(), 0, 5);
-                ApplicationExitInfo e = firstRelevantExit(exits);
-                if (e != null) {
-                    if (out.length() > 0) out.append('\n');
-                    out.append("last_exit_reason=").append(reasonName(e.getReason()))
-                            .append('(').append(e.getReason()).append(')')
-                            .append(" status=").append(e.getStatus())
-                            .append(" importance=").append(e.getImportance())
-                            .append(" pss_kb=").append(e.getPss())
-                            .append(" rss_kb=").append(e.getRss());
-                    CharSequence d = e.getDescription();
-                    if (d != null && d.length() > 0) out.append("\ndescription=").append(d);
-                    out.append("\nexit_time=")
-                            .append(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
-                                    .format(new Date(e.getTimestamp())));
-                }
-            } catch (Throwable ignored) { }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            appendExitInfo(context, out);
         }
         return out.toString();
     }
 
+    @TargetApi(Build.VERSION_CODES.R)
+    private static void appendExitInfo(Context context, StringBuilder out) {
+        try {
+            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            List<ApplicationExitInfo> exits = am.getHistoricalProcessExitReasons(context.getPackageName(), 0, 5);
+            ApplicationExitInfo e = firstRelevantExit(exits);
+            if (e != null) {
+                if (out.length() > 0) out.append('\n');
+                out.append("last_exit_reason=").append(reasonName(e.getReason()))
+                        .append('(').append(e.getReason()).append(')')
+                        .append(" status=").append(e.getStatus())
+                        .append(" importance=").append(e.getImportance())
+                        .append(" pss_kb=").append(e.getPss())
+                        .append(" rss_kb=").append(e.getRss());
+                CharSequence d = e.getDescription();
+                if (d != null && d.length() > 0) out.append("\ndescription=").append(d);
+                out.append("\nexit_time=")
+                        .append(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
+                                .format(new Date(e.getTimestamp())));
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    @TargetApi(Build.VERSION_CODES.R)
     private static ApplicationExitInfo firstRelevantExit(List<ApplicationExitInfo> exits) {
         if (exits == null) return null;
         for (ApplicationExitInfo e : exits) {
@@ -91,8 +98,8 @@ public final class CrashDiagnostics {
         return null;
     }
 
+    @TargetApi(Build.VERSION_CODES.R)
     private static String reasonName(int reason) {
-        if (Build.VERSION.SDK_INT < 30) return "unknown";
         switch (reason) {
             case ApplicationExitInfo.REASON_ANR: return "ANR";
             case ApplicationExitInfo.REASON_CRASH: return "CRASH_JAVA";
