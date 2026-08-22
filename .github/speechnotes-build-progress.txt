@@ -1,7 +1,7 @@
 source_commit=f280ba1e6fa8d50ab4af863642c2eaf9a3dec231
 run_id=32573467778
 run_attempt=1
-phase=whisper_source
-state=done
-updated_utc=2026-08-22T12:38:08Z
-detail=whisper.cpp v1.9.1 fetched
+phase=patches
+state=running
+updated_utc=2026-08-22T12:38:09Z
+detail=Applying v2.0.0 integrated max-3 speaker diarization architecture
