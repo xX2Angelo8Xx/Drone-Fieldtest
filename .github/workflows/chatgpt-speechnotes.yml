@@ -53,7 +53,8 @@ jobs:
 
       - name: Apply Speech Notes patches
         run: |
-          bash .github/speechnotes-progress.sh patches running "Applying v1.9.0 integrated streaming pipeline"
+          set -euo pipefail
+          bash .github/speechnotes-progress.sh patches running "Applying v2.0.0 integrated max-3 speaker diarization architecture"
           python3 .github/patch_speechnotes_whisper_timings.py
           python3 .github/patch_speechnotes_benchmark_tab.py
           python3 .github/patch_speechnotes_v150_runtime.py
@@ -65,7 +66,8 @@ jobs:
           python3 .github/patch_speechnotes_v184_recording_fix.py
           python3 .github/patch_speechnotes_v185_runtime_session.py
           python3 .github/patch_speechnotes_v190_streaming.py
-          bash .github/speechnotes-progress.sh patches done "Streaming core, overlap assembly, backlog telemetry, live UI and final flush applied"
+          python3 .github/patch_speechnotes_v200_diarization.py
+          bash .github/speechnotes-progress.sh patches done "Whisper timestamps + CAM++ embeddings + List<SpeakerCluster> + online tracking + final global refinement + transcript fusion applied"
 
       - name: Build host quantizer
         run: |
@@ -80,15 +82,17 @@ jobs:
       - name: Prepare models
         run: |
           set -euo pipefail
-          bash .github/speechnotes-progress.sh models running "Downloading Q5 models and Turbo source"
-          rm -rf SpeechNotes/app/src/main/assets/models
-          mkdir -p SpeechNotes/app/src/main/assets/models
+          bash .github/speechnotes-progress.sh models running "Downloading Whisper models and pinned CAM++ speaker encoder"
+          rm -rf SpeechNotes/app/src/main/assets/models SpeechNotes/app/src/main/assets/speaker
+          mkdir -p SpeechNotes/app/src/main/assets/models SpeechNotes/app/src/main/assets/speaker
           curl -fL --retry 5 --retry-delay 5 -o SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
           curl -fL --retry 5 --retry-delay 5 -o SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
           curl -fL --retry 5 --retry-delay 5 -o /tmp/ggml-large-v3-turbo.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+          curl -fL --retry 5 --retry-delay 5 -o SpeechNotes/app/src/main/assets/speaker/campplus_cn_en_common_200k.onnx https://huggingface.co/welcomyou/campplus-3dspeaker-200k-onnx/resolve/cf8f96b6ca0255d3af39bd12b41e49be955eefa6/campplus_cn_en_common_200k.onnx
           echo "a3733eda680ef76256db5fc5dd9de8629e62c5e7  SpeechNotes/app/src/main/assets/models/ggml-base-q5_1.bin" | sha1sum -c -
           echo "e050f7970618a659205450ad97eb95a18d69c9ee  SpeechNotes/app/src/main/assets/models/ggml-large-v3-turbo-q5_0.bin" | sha1sum -c -
-          bash .github/speechnotes-progress.sh models done "Q5 models verified and Turbo source ready"
+          echo "dd1740aa1e1ffa3895f96aef2166b8af2bb2ad09c00769dd275ee36aef6a2a7f  SpeechNotes/app/src/main/assets/speaker/campplus_cn_en_common_200k.onnx" | sha256sum -c -
+          bash .github/speechnotes-progress.sh models done "Whisper sources and CAM++ 192-d speaker encoder verified"
 
       - name: Quantize Turbo Q4_0
         run: |
@@ -109,38 +113,51 @@ jobs:
       - name: Build signed release APK
         run: |
           set -o pipefail
-          bash .github/speechnotes-progress.sh native_build running "v1.9.0 Gradle+CMake build starting"
+          bash .github/speechnotes-progress.sh native_build running "v2.0.0 Gradle+CMake build starting"
           rm -f /tmp/speechnotes-gradle.log
           (cd SpeechNotes && gradle --no-daemon :app:assembleRelease) 2>&1 | tee /tmp/speechnotes-gradle.log
-          bash .github/speechnotes-progress.sh native_build done "v1.9.0 Gradle+CMake build completed" /tmp/speechnotes-gradle.log
+          bash .github/speechnotes-progress.sh native_build done "v2.0.0 Gradle+CMake build completed" /tmp/speechnotes-gradle.log
 
       - name: Android lint review gate
         run: |
+          set +e
           set -o pipefail
-          bash .github/speechnotes-progress.sh lint_review running "Running Android lint review for streaming prototype"
+          bash .github/speechnotes-progress.sh lint_review running "Running hard Android lint gate for streaming + speaker architecture"
           rm -f /tmp/speechnotes-lint.log
           (cd SpeechNotes && gradle --no-daemon :app:lintRelease) 2>&1 | tee /tmp/speechnotes-lint.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            report="SpeechNotes/app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt"
+            if [ -f "$report" ]; then
+              echo "===== FULL LINT REPORT ====="
+              cat "$report"
+            fi
+            bash .github/speechnotes-progress.sh lint_review failed "Android lint gate failed; full report emitted" /tmp/speechnotes-lint.log || true
+            exit "$rc"
+          fi
           bash .github/speechnotes-progress.sh lint_review done "Android lint review passed" /tmp/speechnotes-lint.log
 
       - name: Inspect APK
         run: |
           set -euo pipefail
-          bash .github/speechnotes-progress.sh apk_inspect running "Verifying v1.9.0 APK contents"
+          bash .github/speechnotes-progress.sh apk_inspect running "Verifying v2.0.0 APK contents"
           cd SpeechNotes
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
           unzip -l app/build/outputs/apk/release/app-release.apk > /tmp/apk-files.txt
           grep -q 'libggml-cpu-android_armv9.0_1.so' /tmp/apk-files.txt
           grep -q 'libggml-cpu-android_armv9.0_1_kai.so' /tmp/apk-files.txt
           grep -q 'assets/models/ggml-large-v3-turbo-q4_0.bin' /tmp/apk-files.txt
+          grep -q 'assets/speaker/campplus_cn_en_common_200k.onnx' /tmp/apk-files.txt
+          grep -q 'libonnxruntime.so' /tmp/apk-files.txt
           ! grep -q 'libggml-vulkan.so' /tmp/apk-files.txt
-          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-1.9.0.apk
+          cp app/build/outputs/apk/release/app-release.apk ../SpeechNotes-2.0.0.apk
           cd ..
-          bash .github/speechnotes-progress.sh apk_inspect done "Signed v1.9.0 APK verified; streaming runtime assets present"
+          bash .github/speechnotes-progress.sh apk_inspect done "Signed v2.0.0 APK verified; Q4 streaming + ONNX Runtime + pinned CAM++ speaker model present"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SpeechNotes-v1.9.0-arm64
-          path: SpeechNotes-1.9.0.apk
+          name: SpeechNotes-v2.0.0-arm64
+          path: SpeechNotes-2.0.0.apk
           compression-level: 0
           retention-days: 14
 
@@ -148,10 +165,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v1.9.0"
-          gh release delete speechnotes-v1.9.0 --yes --cleanup-tag || true
-          gh release create speechnotes-v1.9.0 SpeechNotes-1.9.0.apk#SpeechNotes-1.9.0.apk --repo "$GITHUB_REPOSITORY" --target "$SPEECHNOTES_SOURCE_SHA" --title "Speech Notes v1.9.0" --notes "Integrated streaming prototype combining the originally planned v1.9.0-v1.9.3 work: continuous AudioRecord capture, 90 s PCM ring buffer, 25 s windows with 3 s overlap / 22 s stride, a single bounded Whisper inference worker, deterministic overlap de-duplication, committed/live transcript display, mandatory final flush, queue/backlog/drop telemetry, long-run diagnostics, WAV preservation and the validated v1.8.5 runtime-session self-healing. Productive default remains Large-v3-Turbo Q4_0 / stock ARMv9 / 4T / audio_ctx 1280 / no affinity. Android lint remains a hard CI gate."
-          bash .github/speechnotes-progress.sh release done "speechnotes-v1.9.0 published with APK asset"
+          bash .github/speechnotes-progress.sh release running "Publishing speechnotes-v2.0.0"
+          gh release delete speechnotes-v2.0.0 --yes --cleanup-tag || true
+          gh release create speechnotes-v2.0.0 SpeechNotes-2.0.0.apk#SpeechNotes-2.0.0.apk --repo "$GITHUB_REPOSITORY" --target "$SPEECHNOTES_SOURCE_SHA" --title "Speech Notes v2.0.0" --notes "Large speaker-aware architecture extension on top of the validated v1.9 streaming pipeline. Adds one-pass Whisper segment timestamps, a pinned Apache-2.0 CAM++ speaker encoder running locally through ONNX Runtime, dependency-free 80-bin log-mel extraction, adaptive VAD, generic List<SpeakerCluster> online tracking capped at three anonymous speakers, session-final global centroid refinement, and timestamp-based Whisper/speaker transcript fusion. Speaker diarization is enabled by default but user-switchable and fails safely back to the plain streaming transcript if its auxiliary runtime fails. Productive Whisper remains Large-v3-Turbo Q4_0 / stock ARMv9 / 4T / audio_ctx 1280. The hard Android lint gate remains enabled and now emits the complete report on failure."
+          bash .github/speechnotes-progress.sh release done "speechnotes-v2.0.0 published with APK asset"
 
       - name: Record build status
         if: always()
