@@ -1,7 +1,7 @@
 source_commit=f280ba1e6fa8d50ab4af863642c2eaf9a3dec231
 run_id=32573467778
 run_attempt=1
-phase=models
-state=done
-updated_utc=2026-08-22T12:39:58Z
-detail=Whisper sources and CAM++ 192-d speaker encoder verified
+phase=quantize_q4
+state=running
+updated_utc=2026-08-22T12:39:59Z
+detail=Quantizing official Turbo source to Q4_0
