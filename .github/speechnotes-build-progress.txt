@@ -1,7 +1,7 @@
 source_commit=d77004de3d4c373c037b654cccbfc9d1e16bed5c
 run_id=32567061240
 run_attempt=1
-phase=apk_inspect
-state=done
-updated_utc=2026-08-22T10:21:01Z
-detail=Signed v1.9.0 APK verified; streaming runtime assets present
+phase=release
+state=running
+updated_utc=2026-08-22T10:21:11Z
+detail=Publishing speechnotes-v1.9.0
