@@ -1,7 +1,7 @@
-source_commit=a4a44ef0d215ef47ac1c2623debc28386f818f20
-run_id=32566442816
+source_commit=b57687331ea2341fc571bc3aabdc291db4b621fd
+run_id=32566516573
 run_attempt=1
-phase=android_sdk
-state=done
-updated_utc=2026-08-22T10:01:22Z
-detail=Android SDK components ready
+phase=initialize
+state=running
+updated_utc=2026-08-22T10:01:58Z
+detail=Runner started; source checkout complete
