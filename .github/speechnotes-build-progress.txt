@@ -1,7 +1,7 @@
 source_commit=d77004de3d4c373c037b654cccbfc9d1e16bed5c
 run_id=32567061240
 run_attempt=1
-phase=whisper_source
-state=done
-updated_utc=2026-08-22T10:14:44Z
-detail=whisper.cpp v1.9.1 fetched
+phase=patches
+state=running
+updated_utc=2026-08-22T10:14:45Z
+detail=Applying v1.9.0 integrated streaming pipeline
