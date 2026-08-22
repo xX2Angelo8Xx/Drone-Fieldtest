@@ -1,7 +1,7 @@
-source_commit=700b4c71c1c0b5b33e16e6e5d7997562b387ba64
-run_id=32252138062
+source_commit=a4a44ef0d215ef47ac1c2623debc28386f818f20
+run_id=32566442816
 run_attempt=1
-phase=release
-state=done
-updated_utc=2026-08-19T12:28:42Z
-detail=speechnotes-v1.8.5 published with APK asset
+phase=initialize
+state=running
+updated_utc=2026-08-22T10:00:28Z
+detail=Runner started; source checkout complete
