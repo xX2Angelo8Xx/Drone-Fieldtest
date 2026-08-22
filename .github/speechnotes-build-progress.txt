@@ -1,7 +1,7 @@
-source_commit=4b0a48ea454ad807f1631db950710fe54ac959ec
-run_id=32566543363
+source_commit=d77004de3d4c373c037b654cccbfc9d1e16bed5c
+run_id=32567061240
 run_attempt=1
-phase=patches
+phase=initialize
 state=running
-updated_utc=2026-08-22T10:03:14Z
-detail=Applying v1.9.0 integrated streaming pipeline
+updated_utc=2026-08-22T10:13:51Z
+detail=Runner started; source checkout complete
